@@ -184,3 +184,124 @@ gcloud recommender recommendations list \
 - **Shut down** confirmed unused projects: `gcloud projects delete PROJECT_ID`
 - **Export billing to BigQuery** and set up alerts for low-activity projects.
 - **Use the Carbon Footprint dashboard** to track and reduce emissions per project.
+
+---
+
+## 7. GCS Buckets Without Lifecycle Policies
+
+Storage objects kept indefinitely waste energy on hardware serving no purpose. Lifecycle policies automate transition to cheaper classes and eventual deletion.
+
+### Detect
+
+```bash
+# List all buckets
+gcloud storage buckets list --format="table(name,location,storageClass)"
+
+# Check which buckets lack lifecycle rules
+for BUCKET in $(gcloud storage buckets list --format="value(name)"); do
+  LC=$(gcloud storage buckets describe gs://$BUCKET --format="value(lifecycle)")
+  if [ -z "$LC" ] || [ "$LC" == "None" ]; then
+    echo "NO LIFECYCLE: $BUCKET"
+  fi
+done
+
+# Check bucket sizes
+gcloud storage du --summarize gs://BUCKET_NAME
+```
+
+### Fix
+
+- **Add lifecycle rules** to transition and delete objects:
+  ```bash
+  gcloud storage buckets update gs://BUCKET_NAME --lifecycle-file=lifecycle.json
+  ```
+  With `lifecycle.json`:
+  ```json
+  {
+    "rule": [
+      {"action": {"type": "SetStorageClass", "storageClass": "NEARLINE"}, "condition": {"age": 90}},
+      {"action": {"type": "SetStorageClass", "storageClass": "COLDLINE"}, "condition": {"age": 180}},
+      {"action": {"type": "Delete"}, "condition": {"age": 365}}
+    ]
+  }
+  ```
+- **Enable Autoclass** for automatic tier transitions based on access patterns.
+- **Delete** unused buckets: `gcloud storage rm -r gs://BUCKET_NAME`
+
+---
+
+## 8. Missing Cloud CDN for Static Assets
+
+Serving static assets directly from origin backends wastes energy on repeated long-distance network transfers. Cloud CDN caches content at Google's edge nodes, shortening the path to users.
+
+### Detect
+
+```bash
+# List backend services and check CDN status
+gcloud compute backend-services list \
+  --format="table(name,enableCDN,backends[].group)"
+
+# Find backend services without CDN enabled
+gcloud compute backend-services list \
+  --filter="enableCDN=false" \
+  --format="table(name,backends[].group)"
+
+# List URL maps to identify static asset routes
+gcloud compute url-maps list --format="table(name,defaultService)"
+```
+
+### Fix
+
+- **Enable Cloud CDN** on backend services:
+  ```bash
+  gcloud compute backend-services update BACKEND_NAME --enable-cdn
+  ```
+- **Set cache policies** for static content:
+  ```bash
+  gcloud compute backend-services update BACKEND_NAME \
+    --cache-mode=CACHE_ALL_STATIC --default-ttl=3600
+  ```
+- **Use Cloud Storage as a backend** for static sites with CDN enabled.
+- **Set `Cache-Control` headers** on GCS objects for static assets.
+
+---
+
+## 9. Missing Cloud Armor DDoS Protection
+
+DDoS attacks waste compute and energy on malicious traffic. Cloud Armor provides DDoS protection and WAF capabilities for GCP workloads.
+
+### Detect
+
+```bash
+# List existing security policies
+gcloud compute security-policies list --format="table(name,type)"
+
+# Find backend services without security policy
+gcloud compute backend-services list \
+  --format="table(name,securityPolicy)" | grep -E 'None|^$'
+
+# Check if any policies have rate-limiting rules
+for POLICY in $(gcloud compute security-policies list --format="value(name)"); do
+  gcloud compute security-policies rules list $POLICY \
+    --format="table(priority,action,description)" 2>/dev/null
+done
+```
+
+### Fix
+
+- **Create a security policy** with rate-limiting:
+  ```bash
+  gcloud compute security-policies create my-policy
+  gcloud compute security-policies rules create 1000 \
+    --security-policy=my-policy \
+    --action=rate-based-ban --rate-limit-threshold-count=1000 \
+    --rate-limit-threshold-interval-sec=60 --ban-duration-sec=600 \
+    --conform-action=allow --exceed-action=deny-429
+  ```
+- **Attach policy** to backend services:
+  ```bash
+  gcloud compute backend-services update BACKEND_NAME \
+    --security-policy=my-policy
+  ```
+- **Add OWASP top-10 rules** using preconfigured WAF rules.
+- **Enable Adaptive Protection** for ML-based DDoS detection.

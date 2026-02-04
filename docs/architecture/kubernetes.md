@@ -292,3 +292,142 @@ groups:
     annotations:
       summary: "High traffic: {{ $labels.source_app }} → {{ $labels.destination_app }}"
 ```
+
+---
+
+## 8. Always-On Dev/Test Workloads
+
+Dev, staging, and test namespaces running 24/7 when only used during business hours.
+
+### Detect
+
+```bash
+# List non-production namespaces
+kubectl get namespaces | grep -iE 'dev|staging|test|qa|uat|sandbox|preview'
+
+# Check if non-prod workloads run off-hours (run this outside business hours)
+for NS in $(kubectl get namespaces -o name | grep -iE 'dev|staging|test|qa|uat'); do
+  PODS=$(kubectl get pods -n ${NS#namespace/} --no-headers 2>/dev/null | wc -l)
+  if [ "$PODS" -gt 0 ]; then
+    echo "RUNNING OFF-HOURS: ${NS#namespace/} — $PODS pods"
+  fi
+done
+
+# Check for KEDA ScaledObjects or CronJobs that handle scale-down
+kubectl get scaledobjects --all-namespaces 2>/dev/null || echo "KEDA not installed"
+```
+
+### Fix
+
+- **Use `kube-downscaler`** to automatically scale non-prod to zero outside business hours:
+  ```bash
+  # Annotate namespace for downscaling
+  kubectl annotate namespace dev downscaler/uptime="Mon-Fri 08:00-20:00 UTC"
+  ```
+- **Use KEDA Cron scaler** to schedule scale-to-zero:
+  ```yaml
+  apiVersion: keda.sh/v1alpha1
+  kind: ScaledObject
+  metadata:
+    name: dev-scaler
+    namespace: dev
+  spec:
+    scaleTargetRef:
+      name: my-app
+    minReplicaCount: 0
+    triggers:
+    - type: cron
+      metadata:
+        timezone: UTC
+        start: "0 8 * * 1-5"
+        end: "0 20 * * 1-5"
+        desiredReplicas: "2"
+  ```
+- **Use ephemeral namespaces** created on demand by CI/CD and destroyed after testing.
+
+---
+
+## 9. Time-Fixed CronJobs (No Carbon-Aware Scheduling)
+
+CronJobs scheduled at fixed times run regardless of grid carbon intensity. Shifting flexible batch work to low-carbon periods reduces emissions without code changes.
+
+### Detect
+
+```bash
+# List all CronJobs
+kubectl get cronjobs --all-namespaces \
+  -o custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,SCHEDULE:.spec.schedule,SUSPEND:.spec.suspend
+
+# Find CronJobs without carbon-aware annotations
+kubectl get cronjobs --all-namespaces -o json | jq -r '
+  .items[] |
+  select(.metadata.annotations["carbon-aware"] == null) |
+  "\(.metadata.namespace)/\(.metadata.name): \(.spec.schedule)"'
+```
+
+### Fix
+
+- **Integrate carbon-intensity APIs** (WattTime, Electricity Maps) into scheduling decisions.
+- **Use KEDA with carbon-aware triggers** or a controller that adjusts CronJob schedules based on 24-hour carbon forecasts.
+- **Add flexible deadline windows** — instead of "run at 2am", allow "run between midnight and 6am when carbon intensity is lowest."
+- **Label flexible vs fixed jobs** so schedulers know which jobs can be shifted:
+  ```bash
+  kubectl annotate cronjob CRONJOB_NAME carbon-aware=true flexible-window=6h
+  ```
+
+---
+
+## 10. Missing NetworkPolicies
+
+Without NetworkPolicies, all pods can communicate with all other pods. This allows unnecessary network traffic and increases attack surface — compromised pods waste energy via unauthorized activity.
+
+### Detect
+
+```bash
+# Check if any NetworkPolicies exist
+kubectl get networkpolicies --all-namespaces
+
+# Count namespaces without any NetworkPolicy
+for NS in $(kubectl get namespaces -o name); do
+  COUNT=$(kubectl get networkpolicies -n ${NS#namespace/} --no-headers 2>/dev/null | wc -l)
+  if [ "$COUNT" -eq 0 ]; then
+    echo "NO NETWORK POLICY: ${NS#namespace/}"
+  fi
+done
+```
+
+### Fix
+
+- **Add a default-deny ingress policy** per namespace and then whitelist required traffic:
+  ```yaml
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: default-deny-ingress
+    namespace: production
+  spec:
+    podSelector: {}
+    policyTypes:
+    - Ingress
+  ```
+- **Allow only required communication** between services:
+  ```yaml
+  apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: allow-api-to-db
+    namespace: production
+  spec:
+    podSelector:
+      matchLabels:
+        app: database
+    ingress:
+    - from:
+      - podSelector:
+          matchLabels:
+            app: api
+      ports:
+      - port: 5432
+  ```
+- **Use a CNI that supports NetworkPolicies** (Calico, Cilium, Weave Net).
+- **Add egress policies** to prevent pods from reaching unauthorized external services.

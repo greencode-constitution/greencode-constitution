@@ -558,3 +558,94 @@ grep -rEn '\.findAll\(|\.getAll\(' --include="*.java" ./src
 ### Fix
 
 Select only the columns you need, or use a DTO projection in your ORM.
+
+---
+
+## 19. Missing HTTP Response Compression
+
+**Why it wastes energy**: Serving uncompressed HTTP responses wastes bandwidth and energy. Most Java web frameworks support gzip/brotli but it's often not enabled by default.
+
+### Detect
+
+```bash
+# Spring Boot: check if compression is enabled in properties
+grep -rEn 'server\.compression' --include="*.properties" --include="*.yml" --include="*.yaml" .
+grep -rL 'server\.compression\.enabled' --include="*.properties" --include="*.yml" . | xargs grep -l 'server\.port'
+
+# Servlet filter: check for GzipFilter or CompressingFilter
+grep -rEn 'GzipFilter\|CompressingFilter\|GzipServletFilter' --include="*.java" --include="*.xml" ./src
+
+# Check if spring-boot-starter-web is present but compression unconfigured
+grep -q 'spring-boot-starter-web' pom.xml build.gradle 2>/dev/null && \
+  grep -rqL 'compression.enabled' --include="*.properties" --include="*.yml" . && \
+  echo "Spring Web present but compression not configured"
+```
+
+### Bad
+
+```yaml
+# application.yml — no compression config
+server:
+  port: 8080
+```
+
+### Fix
+
+```yaml
+# application.yml
+server:
+  port: 8080
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/css,application/javascript
+    min-response-size: 1024
+```
+
+---
+
+## 20. Synchronous Blocking HTTP Calls
+
+**Why it wastes energy**: Blocking HTTP calls (`HttpURLConnection`, synchronous `RestTemplate`) hold threads idle while waiting for responses. Async/non-blocking clients let threads handle other work during I/O waits.
+
+### Detect
+
+```bash
+# HttpURLConnection (always blocking)
+grep -rEn 'HttpURLConnection\|openConnection\(\)' --include="*.java" ./src
+
+# RestTemplate (synchronous, deprecated for new code)
+grep -rEn 'RestTemplate\|restTemplate\.' --include="*.java" ./src
+
+# Synchronous OkHttp calls
+grep -rEn '\.execute\(\)' --include="*.java" ./src | grep -i 'http\|okhttp\|call'
+
+# Missing WebClient or async HTTP usage
+grep -rL 'WebClient\|HttpClient\.newHttpClient\|CompletableFuture' --include="*.java" ./src \
+  | xargs grep -l 'RestTemplate\|HttpURLConnection'
+```
+
+### Bad
+
+```java
+// Blocks the thread until response arrives
+RestTemplate restTemplate = new RestTemplate();
+String result = restTemplate.getForObject("http://service/api/data", String.class);
+```
+
+### Fix
+
+```java
+// Spring WebClient (non-blocking)
+WebClient client = WebClient.create("http://service");
+Mono<String> result = client.get()
+    .uri("/api/data")
+    .retrieve()
+    .bodyToMono(String.class);
+
+// Java 11+ HttpClient (async)
+HttpClient client = HttpClient.newHttpClient();
+CompletableFuture<HttpResponse<String>> future = client.sendAsync(
+    HttpRequest.newBuilder(URI.create("http://service/api/data")).build(),
+    HttpResponse.BodyHandlers.ofString()
+);
+```

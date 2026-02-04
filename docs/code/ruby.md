@@ -293,3 +293,98 @@ result = items.each_with_object([]) do |i, acc|
   acc << i.name if i.active?
 end
 ```
+
+---
+
+## 10. Missing Rack Compression Middleware
+
+**Why it wastes energy**: Serving uncompressed HTTP responses wastes bandwidth and energy at every network hop. Rack's `Deflater` middleware or the `rack-brotli` gem compresses responses by 60-80%.
+
+### Detect
+
+```bash
+# Rails: check if deflater or compression gem is configured
+grep -rL "Deflater\|rack-brotli\|Rack::Deflater" --include="*.rb" ./config | xargs grep -l "config\.middleware\|Rails\.application"
+
+# Sinatra/Rack: check middleware stack
+grep -rEn "use Rack::" --include="*.rb" ./src | grep -v "Deflater"
+
+# Check Gemfile for compression gems
+grep -q "rack-deflater\|rack-brotli" Gemfile 2>/dev/null || echo "No compression gem in Gemfile"
+```
+
+### Bad
+
+```ruby
+# config/application.rb — no compression configured
+module MyApp
+  class Application < Rails::Application
+    # responses sent uncompressed
+  end
+end
+```
+
+### Fix
+
+```ruby
+# config/application.rb
+module MyApp
+  class Application < Rails::Application
+    config.middleware.use Rack::Deflater  # gzip compression
+  end
+end
+
+# Or in config.ru for Sinatra/Rack apps:
+use Rack::Deflater
+run MyApp
+
+# For Brotli (better compression ratio):
+# Gemfile: gem 'rack-brotli'
+config.middleware.use Rack::Brotli
+```
+
+---
+
+## 11. Verbose Serialization for Internal APIs
+
+**Why it wastes energy**: JSON is the default for Rails APIs, but for internal service-to-service communication, binary formats like MessagePack or Protobuf are 2-10x smaller and faster to parse, reducing network and CPU energy.
+
+### Detect
+
+```bash
+# JSON rendering in controllers
+grep -rEn 'render\s+json:' --include="*.rb" ./app/controllers
+
+# to_json calls for internal API responses
+grep -rEn '\.to_json\b' --include="*.rb" ./src ./app
+
+# JSON.generate / JSON.parse for internal service communication
+grep -rEn 'JSON\.(generate|parse)' --include="*.rb" ./src ./app
+
+# Missing MessagePack or Protobuf usage
+grep -rL 'msgpack\|MessagePack\|protobuf' --include="*.rb" ./src ./app
+```
+
+### Bad
+
+```ruby
+# Internal service call using JSON
+response = Net::HTTP.get(URI("http://orders-service/api/orders"))
+orders = JSON.parse(response)  # verbose format, slow parsing
+```
+
+### Fix
+
+```ruby
+# Use MessagePack for internal service communication (~60% smaller)
+require 'msgpack'
+
+response = Net::HTTP.get(URI("http://orders-service/api/orders"))
+orders = MessagePack.unpack(response)
+
+# Or configure Rails to support MessagePack:
+# Gemfile: gem 'msgpack'
+# In controller: render msgpack: @orders
+```
+
+**Note**: JSON is the right choice for public-facing APIs and browser clients.

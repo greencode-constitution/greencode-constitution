@@ -262,3 +262,122 @@ aws compute-optimizer get-ebs-volume-recommendations \
 - **Use auto-scaling groups** with target tracking policies instead of static fleets.
 - **Adopt Graviton instances** across workloads for lower energy per unit of compute.
 - **Schedule non-production** environments to shut down outside business hours.
+
+---
+
+## 8. S3 Buckets Without Lifecycle Policies
+
+Storage objects kept indefinitely waste energy on hardware that serves no purpose. Lifecycle policies automate transition to cheaper tiers and eventual deletion.
+
+### Detect
+
+```bash
+# List all buckets
+aws s3api list-buckets --query 'Buckets[*].Name' --output table
+
+# Check if a bucket has lifecycle configuration
+for BUCKET in $(aws s3api list-buckets --query 'Buckets[*].Name' --output text); do
+  LC=$(aws s3api get-bucket-lifecycle-configuration --bucket $BUCKET 2>/dev/null)
+  if [ -z "$LC" ]; then
+    echo "NO LIFECYCLE: $BUCKET"
+  fi
+done
+
+# Check bucket sizes (requires CloudWatch)
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/S3 --metric-name BucketSizeBytes \
+  --dimensions Name=BucketName,Value=BUCKET_NAME Name=StorageType,Value=StandardStorage \
+  --start-time $(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --period 86400 --statistics Average --output table
+```
+
+### Fix
+
+- **Add lifecycle rules** to transition and expire objects:
+  ```bash
+  aws s3api put-bucket-lifecycle-configuration --bucket BUCKET_NAME \
+    --lifecycle-configuration '{
+      "Rules": [{
+        "ID": "archive-and-expire",
+        "Status": "Enabled",
+        "Filter": {},
+        "Transitions": [
+          {"Days": 90, "StorageClass": "STANDARD_IA"},
+          {"Days": 180, "StorageClass": "GLACIER"}
+        ],
+        "Expiration": {"Days": 365}
+      }]
+    }'
+  ```
+- **Enable S3 Intelligent-Tiering** for objects with unpredictable access patterns.
+- **Delete** empty or unused buckets: `aws s3 rb s3://BUCKET_NAME --force`
+
+---
+
+## 9. Missing CloudFront CDN for Static Assets
+
+Serving static assets directly from origin servers wastes energy on repeated long-distance network transfers. CDN caching shortens the path to users and reduces origin load.
+
+### Detect
+
+```bash
+# Find S3 buckets with website hosting enabled (potentially served without CDN)
+for BUCKET in $(aws s3api list-buckets --query 'Buckets[*].Name' --output text); do
+  WEBSITE=$(aws s3api get-bucket-website --bucket $BUCKET 2>/dev/null)
+  if [ ! -z "$WEBSITE" ]; then
+    echo "WEBSITE HOSTING: $BUCKET — verify CloudFront is in front"
+  fi
+done
+
+# List CloudFront distributions
+aws cloudfront list-distributions \
+  --query 'DistributionList.Items[*].[Id,DomainName,Origins.Items[0].DomainName,Status]' --output table
+
+# Check if ALBs have CloudFront in front
+aws elbv2 describe-load-balancers \
+  --query 'LoadBalancers[?Scheme==`internet-facing`].[LoadBalancerName,DNSName]' --output table
+```
+
+### Fix
+
+- **Create a CloudFront distribution** in front of S3 or ALB origins.
+- **Set Cache-Control headers** on S3 objects for static assets (images, CSS, JS, fonts).
+- **Enable compression** on the distribution (`Compress: true` in the default cache behavior).
+- **Use Origin Access Control (OAC)** to keep the S3 bucket private while serving via CDN.
+
+---
+
+## 10. Missing DDoS Protection (AWS Shield / WAF)
+
+DDoS attacks flood infrastructure with malicious traffic, wasting compute and energy on nonsensical requests. Shield Standard is free; WAF provides application-layer filtering.
+
+### Detect
+
+```bash
+# Check Shield subscription
+aws shield describe-subscription 2>/dev/null || echo "Shield Advanced not enabled"
+
+# List WAF WebACLs
+aws wafv2 list-web-acls --scope REGIONAL \
+  --query 'WebACLs[*].[Name,Id]' --output table
+
+# Find ALBs without WAF
+for ALB_ARN in $(aws elbv2 describe-load-balancers --query 'LoadBalancers[*].LoadBalancerArn' --output text); do
+  WAF=$(aws wafv2 get-web-acl-for-resource --resource-arn $ALB_ARN 2>/dev/null)
+  if [ -z "$WAF" ] || echo "$WAF" | grep -q 'null'; then
+    echo "NO WAF: $ALB_ARN"
+  fi
+done
+
+# Find CloudFront distributions without WAF
+aws cloudfront list-distributions \
+  --query 'DistributionList.Items[?WebACLId==``].[Id,DomainName]' --output table
+```
+
+### Fix
+
+- **Enable AWS Shield Standard** (free, automatic for all AWS accounts).
+- **Attach WAF WebACLs** to public-facing ALBs, API Gateways, and CloudFront distributions.
+- **Add rate-limiting rules** in WAF to throttle abusive traffic.
+- **Budget for Shield Advanced** for critical customer-facing workloads.

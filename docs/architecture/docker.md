@@ -235,3 +235,46 @@ docker stats --no-stream --format "{{.Name}}: Net I/O {{.NetIO}}"
 - **Use DNS names** instead of IP-based communication.
 - **Avoid host networking** unless strictly required for performance.
 - **Consider using Unix sockets** for co-located services for zero network overhead.
+
+---
+
+## 8. Single-Architecture Images (No Multi-Arch Builds)
+
+Images built only for `amd64` miss energy savings from ARM-based processors (Graviton, Ampere Altra). ARM instances use up to 60% less energy for equivalent performance.
+
+### Detect
+
+```bash
+# Check image architectures
+docker images --format '{{.Repository}}:{{.Tag}}' | while read IMG; do
+  ARCH=$(docker inspect "$IMG" --format '{{.Architecture}}' 2>/dev/null)
+  echo "$IMG: $ARCH"
+done
+
+# In Dockerfiles: check for amd64-only platform pinning
+grep -rn 'FROM --platform=linux/amd64' --include="Dockerfile*" .
+
+# Check if buildx is configured for multi-arch
+docker buildx ls 2>/dev/null
+
+# In CI configs: check for missing multi-arch build steps
+grep -rL 'buildx\|--platform' --include="Dockerfile*" .
+```
+
+### Fix
+
+- **Use `docker buildx`** for multi-architecture builds:
+  ```bash
+  docker buildx create --use
+  docker buildx build --platform linux/amd64,linux/arm64 -t myimage:latest --push .
+  ```
+- **Avoid architecture-specific base images**:
+  ```dockerfile
+  # Bad — locks to amd64
+  FROM --platform=linux/amd64 node:20-alpine
+
+  # Good — adapts to target platform
+  FROM node:20-alpine
+  ```
+- **Test on ARM** in CI before deploying to Graviton/Ampere instances.
+- **Use multi-arch manifest lists** so `docker pull` resolves the right architecture automatically.

@@ -361,3 +361,95 @@ var users = db.Users.ToList();
 // Good
 var users = db.Users.Select(u => new { u.Id, u.Name, u.Email }).ToList();
 ```
+
+---
+
+## 11. Missing HTTP Response Compression
+
+**Why it wastes energy**: Serving uncompressed HTTP responses wastes bandwidth and energy. ASP.NET Core has built-in compression middleware but it's not enabled by default.
+
+### Detect
+
+```bash
+# Check for missing response compression middleware
+grep -rL "UseResponseCompression\|AddResponseCompression" --include="*.cs" ./src \
+  | xargs grep -l "UseRouting\|MapControllers\|app\.Run"
+
+# Check if compression package is referenced
+grep -rEn 'Microsoft\.AspNetCore\.ResponseCompression' --include="*.csproj" .
+
+# Missing compression in middleware pipeline
+grep -rEn 'app\.(Use|Map|Run)' --include="*.cs" ./src | grep -v 'ResponseCompression'
+```
+
+### Bad
+
+```csharp
+var app = builder.Build();
+app.UseRouting();
+app.MapControllers();
+// No compression — all responses sent at full size
+app.Run();
+```
+
+### Fix
+
+```csharp
+// In Program.cs or Startup.cs
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+});
+
+var app = builder.Build();
+app.UseResponseCompression(); // add before UseRouting
+app.UseRouting();
+app.MapControllers();
+app.Run();
+```
+
+---
+
+## 12. Verbose Serialization for Internal APIs
+
+**Why it wastes energy**: JSON is the default for ASP.NET APIs, but for internal service-to-service communication, binary formats (Protobuf, MessagePack) are 2-10x smaller and faster to parse, reducing network and CPU energy.
+
+### Detect
+
+```bash
+# JSON serialization in service-to-service calls
+grep -rEn 'JsonSerializer\|JsonConvert\|SerializeObject\|DeserializeObject' --include="*.cs" ./src
+
+# HttpClient calls returning JSON from internal services
+grep -rEn 'ReadAsStringAsync\|ReadFromJsonAsync' --include="*.cs" ./src
+
+# Missing gRPC or binary serialization
+grep -rL 'Grpc\|MessagePack\|Protobuf' --include="*.cs" --include="*.csproj" . \
+  | xargs grep -l 'HttpClient\|JsonSerializer'
+```
+
+### Bad
+
+```csharp
+// Internal service call using JSON
+var response = await httpClient.GetAsync("http://orders-service/api/orders");
+var json = await response.Content.ReadAsStringAsync();
+var orders = JsonSerializer.Deserialize<List<Order>>(json);
+```
+
+### Fix
+
+```csharp
+// Use gRPC for internal service communication
+var channel = GrpcChannel.ForAddress("http://orders-service");
+var client = new OrderService.OrderServiceClient(channel);
+var orders = await client.GetOrdersAsync(new GetOrdersRequest { UserId = userId });
+
+// Or use MessagePack for HTTP-based internal APIs
+var response = await httpClient.GetByteArrayAsync("http://orders-service/api/orders");
+var orders = MessagePackSerializer.Deserialize<List<Order>>(response);
+```
+
+**Note**: JSON remains the right choice for public-facing APIs and browser clients.

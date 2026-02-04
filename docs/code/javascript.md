@@ -374,3 +374,90 @@ for (let i = 0; i < data.length; i++) {
     result[i] = data[i] * factor;
 }
 ```
+
+---
+
+## 12. Missing HTTP Compression Middleware
+
+**Why it wastes energy**: Serving uncompressed HTTP responses forces more data over the network, wasting bandwidth and energy at every hop. Compression middleware (gzip/brotli) typically reduces payload size by 60-80%.
+
+### Detect
+
+```bash
+# Express apps without compression middleware
+grep -rEn "app\.use\(|express\(\)" --include="*.js" --include="*.ts" ./src | head -5
+grep -rL "compression" --include="*.js" --include="*.ts" ./src | xargs grep -l "express\(\)\|app\.listen"
+
+# Check if compression package is installed
+grep -q '"compression"' package.json 2>/dev/null || echo "compression package not in dependencies"
+
+# Next.js / Nuxt without compress config
+grep -rEn "compress" --include="next.config.*" --include="nuxt.config.*" .
+```
+
+### Bad
+
+```javascript
+const express = require("express");
+const app = express();
+// No compression — all responses sent at full size
+app.get("/api/data", (req, res) => {
+    res.json(largePayload);
+});
+```
+
+### Fix
+
+```javascript
+const express = require("express");
+const compression = require("compression");
+const app = express();
+
+app.use(compression()); // gzip/deflate all responses
+
+app.get("/api/data", (req, res) => {
+    res.json(largePayload); // now compressed automatically
+});
+```
+
+---
+
+## 13. Unoptimized Bundle Size (Customer Hardware Impact)
+
+**Why it wastes energy**: Large JavaScript bundles force users to download, parse, and execute more code — draining battery on mobile devices and forcing hardware upgrades. Bloated bundles also increase server egress energy.
+
+### Detect
+
+```bash
+# Check for wildcard imports (pulls in entire library)
+grep -rEn "import .* from ['\"]lodash['\"]" --include="*.js" --include="*.ts" --include="*.tsx" ./src
+grep -rEn "import .* from ['\"]moment['\"]" --include="*.js" --include="*.ts" --include="*.tsx" ./src
+
+# Check for missing code splitting (no dynamic imports)
+grep -rL "import\(" --include="*.js" --include="*.ts" --include="*.tsx" ./src | xargs grep -l "import .* from"
+
+# Check bundle analysis config
+grep -rEn "webpack-bundle-analyzer\|@next/bundle-analyzer\|rollup-plugin-visualizer" package.json
+
+# Check browserslist for excessive backwards compatibility
+grep -rEn "browserslist\|targets" package.json .browserslistrc babel.config.* 2>/dev/null
+```
+
+### Bad
+
+```javascript
+import _ from "lodash";               // imports entire 71KB library
+import moment from "moment";           // imports 67KB + locale data
+import { Button } from "antd";         // may import full component library
+```
+
+### Fix
+
+```javascript
+import groupBy from "lodash/groupBy";  // imports only ~1KB
+import dayjs from "dayjs";             // 2KB alternative to moment
+import Button from "antd/es/button";   // tree-shakeable import
+
+// Use dynamic imports for code splitting:
+const HeavyChart = React.lazy(() => import("./HeavyChart"));
+```

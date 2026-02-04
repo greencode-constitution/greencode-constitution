@@ -511,3 +511,106 @@ async def fetch_data():
         async with session.get("https://api.example.com/data") as response:
             return await response.json()
 ```
+
+---
+
+## 17. Missing HTTP Response Compression
+
+**Why it wastes energy**: Serving uncompressed HTTP responses wastes network bandwidth and energy at every hop. Compression middleware reduces payload size by 60-80%.
+
+### Detect
+
+```bash
+# Django without GZipMiddleware
+grep -rEn "MIDDLEWARE" -A20 --include="*.py" ./src | grep -v "GZipMiddleware" | grep "MIDDLEWARE"
+grep -rL "GZipMiddleware" --include="*.py" ./src | xargs grep -l "MIDDLEWARE"
+
+# Flask without compress
+grep -rL "compress\|Compress" --include="*.py" ./src | xargs grep -l "Flask\(__name__"
+
+# FastAPI without GZipMiddleware
+grep -rL "GZipMiddleware" --include="*.py" ./src | xargs grep -l "FastAPI\(\)"
+```
+
+### Bad
+
+```python
+# Django settings.py
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    # No compression — responses sent at full size
+]
+```
+
+### Fix
+
+```python
+# Django settings.py
+MIDDLEWARE = [
+    "django.middleware.gzip.GZipMiddleware",  # add as first middleware
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+]
+
+# Flask
+from flask_compress import Compress
+app = Flask(__name__)
+Compress(app)
+
+# FastAPI
+from starlette.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=500)
+```
+
+---
+
+## 18. Verbose Serialization Format (JSON Where Binary Would Be More Efficient)
+
+**Why it wastes energy**: JSON and XML are human-readable but verbose. For internal service-to-service communication, binary formats like Protobuf or MessagePack are 2-10x smaller and faster to parse, reducing both network and CPU energy.
+
+### Detect
+
+```bash
+# JSON serialization in internal service communication
+grep -rEn 'json\.dumps\(|json\.loads\(' --include="*.py" ./src
+
+# Large JSON responses from internal APIs
+grep -rEn 'jsonify\(|JSONResponse\(|JsonResponse\(' --include="*.py" ./src
+
+# XML serialization
+grep -rEn 'xml\.etree\|lxml\|xmltodict' --include="*.py" ./src
+
+# Missing protobuf/msgpack usage
+grep -rL 'protobuf\|msgpack\|avro' --include="*.py" ./src | xargs grep -l 'json\.dumps'
+```
+
+### Bad
+
+```python
+# Internal service call using JSON (verbose, slow to parse)
+import json, requests
+
+def get_user_orders(user_id):
+    response = requests.get(f"http://orders-service/api/{user_id}")
+    return json.loads(response.content)  # ~500 bytes per order as JSON
+```
+
+### Fix
+
+```python
+# Use MessagePack for internal service communication (~60% smaller)
+import msgpack, requests
+
+def get_user_orders(user_id):
+    response = requests.get(
+        f"http://orders-service/api/{user_id}",
+        headers={"Accept": "application/msgpack"}
+    )
+    return msgpack.unpackb(response.content)  # ~200 bytes per order
+
+# Or use Protobuf for strongly-typed contracts:
+# Define .proto schema, generate Python stubs, use for internal APIs
+```
+
+**Note**: JSON is the right choice for public-facing APIs and browser clients. Reserve binary formats for internal service-to-service communication where both sides are controlled.
