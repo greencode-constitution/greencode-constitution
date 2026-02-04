@@ -1,0 +1,5 @@
+# GreenCode Constitution: Automated Energy Optimization of Software via Constitutionally-Guided LLM Agents
+
+## Abstract
+
+We present GreenCode Constitution, an agentic framework inspired by Constitutional AI that equips Large Language Models (LLMs) with a structured hierarchy of energy-efficiency principles to automatically detect and refactor energy anti-patterns in existing codebases. Rather than relying on ad hoc prompting, the agent evaluates candidate refactorings against constitutional rules spanning algorithmic complexity, memory behavior, I/O patterns, and infrastructure utilization to ensure optimizations are principled, auditable, and consistent. We evaluate on open-source projects including LLM inference engines, demonstrating that LLMs can meaningfully optimize the software that runs LLMs: the agent achieved a 4.2% energy reduction on llama.cpp and 3.1% on vLLM, alongside gains of 5.5–8.3% on PostgreSQL, Redis, and Python workloads. Across all projects, 74% of proposed refactorings were accepted without modification, and the constitutional approach improved detection precision by 31% over unconstrained prompting.
