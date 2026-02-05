@@ -35,6 +35,8 @@ DETECT_MAP = [
     ("*.csproj",           "code/csharp"),
     ("*.sln",              "code/csharp"),
     ("Gemfile",            "code/ruby"),
+    ("go.mod",             "code/go"),
+    ("go.sum",             "code/go"),
     # Architecture skills
     ("Dockerfile",         "architecture/docker"),
     ("docker-compose.yml", "architecture/docker"),
@@ -56,6 +58,7 @@ GUIDE_DEFS = [
     ("detection",      "Cross-language grep/regex detection patterns"),
     ("arch-detection", "CLI commands and PromQL for infrastructure audits"),
     ("overview",       "Anti-pattern overview with rationale and references"),
+    ("profiling",      "Energy measurement wrapper and profiling tool reference"),
 ]
 
 
@@ -104,14 +107,33 @@ def build_skill_table() -> str:
     return "\n".join(lines)
 
 
+def build_profiling_section() -> str:
+    """Build the energy profiling section."""
+    return f"""## Energy Profiling
+
+Measure actual energy before/after optimization:
+
+```bash
+curl -sL {BASE_URL}/profile.sh | bash -s -- <command>
+# With sudo for RAPL access: | sudo -u $USER bash -s -- <command>
+```
+
+Outputs CPU joules (RAPL/perf), GPU joules (nvidia-smi), wall/CPU time. Use `--json` for scripted comparisons."""
+
+
 def build_skill_md(constitution: str, skill_table: str) -> str:
     """Merge constitution with embedded skill table into skill.md."""
+    profiling = build_profiling_section()
     skill_resolution = f"""
 ## Skill Resolution
 
 The constitution defines *what* to optimize. The *how* lives in skill documents fetched per-technology. Skills win on implementation details; the constitution wins on priority, scope, and conflict resolution. If a skill is unavailable, fall back to constitutional principles and note reduced confidence.
 
 {skill_table}
+
+---
+
+{profiling}
 """
 
     parts = constitution.rsplit("## Article VII — Amendments", 1)
@@ -127,7 +149,7 @@ def generate_skill_md() -> str:
 
 
 class DynamicHandler(http.server.SimpleHTTPRequestHandler):
-    """HTTP handler that dynamically generates skill.md."""
+    """HTTP handler that dynamically generates skill.md and replaces $BASE_URL in docs."""
 
     def __init__(self, *args, directory=None, **kwargs):
         super().__init__(*args, directory=directory, **kwargs)
@@ -140,6 +162,32 @@ class DynamicHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)
+        elif self.path in ("/profile.sh", "/energy-profile.py"):
+            # Serve tools/* at top level
+            file_path = ROOT / "tools" / self.path.lstrip("/")
+            if file_path.exists():
+                content = file_path.read_bytes()
+                self.send_response(200)
+                ctype = "text/x-shellscript" if self.path.endswith(".sh") else "text/x-python"
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+            else:
+                self.send_error(404)
+        elif self.path.startswith("/docs/") and self.path.endswith(".md"):
+            # Replace $BASE_URL in doc files
+            file_path = ROOT / self.path.lstrip("/")
+            if file_path.exists():
+                content = file_path.read_text().replace("$BASE_URL", BASE_URL)
+                content = content.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/markdown; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+            else:
+                self.send_error(404)
         else:
             super().do_GET()
 
@@ -172,6 +220,15 @@ def main():
         skill_md = generate_skill_md()
         SKILL_OUT.write_text(skill_md)
         print(f"wrote {SKILL_OUT} ({len(skill_md.splitlines())} lines)")
+
+        # Copy tools to top level for simpler URLs
+        import shutil
+        for name in ("profile.sh", "energy-profile.py"):
+            src = ROOT / "tools" / name
+            dst = ROOT / name
+            if src.exists():
+                shutil.copy2(src, dst)
+        print("copied tools/{profile.sh,energy-profile.py} to top level")
 
 
 if __name__ == "__main__":

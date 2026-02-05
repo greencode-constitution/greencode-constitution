@@ -12,6 +12,53 @@
 
 ---
 
+## Profiling Tools
+
+Before pattern-matching, identify actual hotspots with profiling. Optimize what's measured, not what's guessed.
+
+### CPU Profiling
+
+**cProfile** (built-in, low overhead):
+```bash
+python -m cProfile -o profile.prof your_script.py
+python -m pstats profile.prof
+# In pstats: sort cumtime; stats 20
+```
+
+**py-spy** (sampling profiler, no code changes, works on running processes):
+```bash
+pip install py-spy
+py-spy top --pid <PID>           # live view
+py-spy record -o profile.svg -- python your_script.py  # flamegraph
+```
+
+**Scalene** (CPU + memory + energy-aware):
+```bash
+pip install scalene
+scalene your_script.py
+# Shows CPU time, memory allocations, and estimated energy by line
+```
+
+### Memory Profiling
+
+**memory_profiler**:
+```bash
+pip install memory_profiler
+python -m memory_profiler your_script.py
+# Or use @profile decorator on functions
+```
+
+**tracemalloc** (built-in):
+```python
+import tracemalloc
+tracemalloc.start()
+# ... your code ...
+snapshot = tracemalloc.take_snapshot()
+top_stats = snapshot.statistics('lineno')[:10]
+```
+
+---
+
 ## 1. String Concatenation in Loops
 
 **Why it wastes energy**: Python strings are immutable. `+=` in a loop creates a new string and copies all previous content on every iteration — O(n²) total work.

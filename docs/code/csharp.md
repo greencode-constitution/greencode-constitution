@@ -12,6 +12,42 @@
 
 ---
 
+## Profiling Tools
+
+Before pattern-matching, identify actual hotspots with profiling. Optimize what's measured, not what's guessed.
+
+### CPU Profiling
+
+**dotnet-trace** (built-in, cross-platform):
+```bash
+dotnet tool install --global dotnet-trace
+dotnet-trace collect --process-id <PID>
+# Analyze with PerfView or Visual Studio
+```
+
+**dotnet-counters** (live metrics):
+```bash
+dotnet tool install --global dotnet-counters
+dotnet-counters monitor --process-id <PID>
+```
+
+**PerfView** (Windows, comprehensive):
+```bash
+PerfView.exe collect
+# Analyze CPU stacks, GC, memory
+```
+
+### Memory Profiling
+
+**dotnet-gcdump** (heap analysis):
+```bash
+dotnet tool install --global dotnet-gcdump
+dotnet-gcdump collect --process-id <PID>
+# Open .gcdump file in Visual Studio or PerfView
+```
+
+---
+
 ## 1. String Concatenation in Loops
 
 **Why it wastes energy**: `System.String` is immutable in C#. Using `+` or `+=` inside a loop creates a new string object every iteration — O(n²) allocations and copies.

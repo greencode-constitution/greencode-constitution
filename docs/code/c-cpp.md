@@ -12,6 +12,49 @@
 
 ---
 
+## Profiling Tools
+
+Before pattern-matching, identify actual hotspots with profiling. Optimize what's measured, not what's guessed.
+
+### CPU Profiling
+
+**perf** (Linux, kernel-level, low overhead):
+```bash
+perf record -g ./your_program
+perf report
+# Flamegraph:
+perf script | stackcollapse-perf.pl | flamegraph.pl > flame.svg
+```
+
+**gprof** (compile-time instrumentation):
+```bash
+gcc -pg -o your_program your_program.c
+./your_program
+gprof your_program gmon.out > analysis.txt
+```
+
+**Valgrind Callgrind** (detailed but slow):
+```bash
+valgrind --tool=callgrind ./your_program
+kcachegrind callgrind.out.*
+```
+
+### Memory Profiling
+
+**Valgrind Massif** (heap profiler):
+```bash
+valgrind --tool=massif ./your_program
+ms_print massif.out.*
+```
+
+**AddressSanitizer** (leak detection, compile-time):
+```bash
+gcc -fsanitize=address -g -o your_program your_program.c
+./your_program
+```
+
+---
+
 ## 1. `strlen()` in Loop Condition
 
 **Why it wastes energy**: `strlen()` is O(n) — it scans until the null terminator every time. In a loop condition, this turns an O(n) loop into O(n²).

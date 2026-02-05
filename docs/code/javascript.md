@@ -13,6 +13,49 @@
 
 ---
 
+## Profiling Tools
+
+Before pattern-matching, identify actual hotspots with profiling. Optimize what's measured, not what's guessed.
+
+### CPU Profiling
+
+**Node.js built-in V8 profiler**:
+```bash
+node --prof your_script.js
+node --prof-process isolate-*.log > processed.txt
+```
+
+**clinic** (comprehensive suite):
+```bash
+npm install -g clinic
+clinic doctor -- node your_script.js    # overall health
+clinic flame -- node your_script.js     # CPU flamegraph
+clinic bubbleprof -- node your_script.js # async flow
+```
+
+**0x** (flamegraph generator):
+```bash
+npm install -g 0x
+0x your_script.js
+# Opens flamegraph in browser
+```
+
+### Memory Profiling
+
+**Chrome DevTools** (connect via `--inspect`):
+```bash
+node --inspect your_script.js
+# Open chrome://inspect, take heap snapshot
+```
+
+**heapdump** (programmatic snapshots):
+```javascript
+const heapdump = require('heapdump');
+heapdump.writeSnapshot('/tmp/heap-' + Date.now() + '.heapsnapshot');
+```
+
+---
+
 ## 1. String Concatenation in Loops
 
 **Why it wastes energy**: Repeated `+=` with strings creates new string objects each iteration, causing O(n²) allocations in V8.

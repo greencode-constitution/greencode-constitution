@@ -12,6 +12,46 @@
 
 ---
 
+## Profiling Tools
+
+Before pattern-matching, identify actual hotspots with profiling. Optimize what's measured, not what's guessed.
+
+### CPU Profiling
+
+**ruby-prof**:
+```bash
+gem install ruby-prof
+ruby-prof your_script.rb
+# Or in code:
+# RubyProf.start; ...; result = RubyProf.stop
+```
+
+**stackprof** (sampling profiler):
+```bash
+gem install stackprof
+# In code:
+StackProf.run(mode: :cpu, out: 'stackprof.dump') { ... }
+stackprof stackprof.dump --text
+```
+
+**rbspy** (sampling, no code changes):
+```bash
+rbspy record -- ruby your_script.rb
+rbspy report -f flamegraph -i record.json
+```
+
+### Memory Profiling
+
+**memory_profiler gem**:
+```bash
+gem install memory_profiler
+# In code:
+report = MemoryProfiler.report { ... }
+report.pretty_print
+```
+
+---
+
 ## 1. String Concatenation in Loops
 
 **Why it wastes energy**: Ruby strings are mutable, but `+` creates a new string each time. Use `<<` (shovel operator) or `Array#join` instead.

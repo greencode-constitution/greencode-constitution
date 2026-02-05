@@ -12,6 +12,50 @@
 
 ---
 
+## Profiling Tools
+
+Before pattern-matching, identify actual hotspots with profiling. Optimize what's measured, not what's guessed.
+
+### CPU Profiling
+
+**Java Flight Recorder (JFR)** (built into JDK 11+, low overhead):
+```bash
+java -XX:StartFlightRecording=duration=60s,filename=profile.jfr -jar your_app.jar
+# Analyze with JDK Mission Control (jmc) or:
+jfr print --events jdk.ExecutionSample profile.jfr
+```
+
+**async-profiler** (low-overhead sampling, includes native frames):
+```bash
+# Download from https://github.com/async-profiler/async-profiler
+./profiler.sh -d 30 -f flamegraph.html <PID>
+# Or attach to running process:
+./profiler.sh start <PID>
+./profiler.sh stop <PID>
+```
+
+**VisualVM** (GUI-based, good for interactive exploration):
+```bash
+visualvm &
+# Attach to running JVM, sample CPU, take heap dump
+```
+
+### Memory Profiling
+
+**JFR heap analysis**:
+```bash
+java -XX:StartFlightRecording=settings=profile,filename=heap.jfr -jar your_app.jar
+jfr print --events jdk.ObjectAllocationInNewTLAB,jdk.ObjectAllocationOutsideTLAB heap.jfr
+```
+
+**Eclipse MAT** (for heap dump analysis):
+```bash
+jmap -dump:format=b,file=heap.hprof <PID>
+# Open heap.hprof in Eclipse Memory Analyzer
+```
+
+---
+
 ## 1. String Concatenation in Loops
 
 **Why it wastes energy**: `String` is immutable in Java. Using `+` or `+=` inside a loop creates a new `String` object every iteration, turning O(n) work into O(n²) allocations and copies.
