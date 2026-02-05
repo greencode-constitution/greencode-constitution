@@ -3,11 +3,18 @@
 
 Scans docs/ to generate skill.md — a single self-contained file
 with the constitution and an embedded markdown skill table.
+
+With --test, serves a local web server that dynamically generates skill.md.
 """
 
+import argparse
+import http.server
+import socketserver
+from functools import partial
 from pathlib import Path
 
-BASE_URL = "https://greencode-constitution.org"
+DEFAULT_BASE_URL = "https://greencode-constitution.org"
+BASE_URL = DEFAULT_BASE_URL
 ROOT = Path(__file__).parent
 DOCS = ROOT / "docs"
 CONSTITUTION = ROOT / "constitution.md"
@@ -112,13 +119,59 @@ The constitution defines *what* to optimize. The *how* lives in skill documents 
     return parts[0].rstrip() + "\n" + skill_resolution + "\n---\n\n## Article VII — Amendments\n\n" + after
 
 
-def main():
+def generate_skill_md() -> str:
+    """Generate skill.md content on the fly."""
     constitution = CONSTITUTION.read_text()
     skill_table = build_skill_table()
-    skill_md = build_skill_md(constitution, skill_table)
+    return build_skill_md(constitution, skill_table)
 
-    SKILL_OUT.write_text(skill_md)
-    print(f"wrote {SKILL_OUT} ({len(skill_md.splitlines())} lines)")
+
+class DynamicHandler(http.server.SimpleHTTPRequestHandler):
+    """HTTP handler that dynamically generates skill.md."""
+
+    def __init__(self, *args, directory=None, **kwargs):
+        super().__init__(*args, directory=directory, **kwargs)
+
+    def do_GET(self):
+        if self.path == "/skill.md" or self.path == "/skill.md?":
+            content = generate_skill_md().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/markdown; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+        else:
+            super().do_GET()
+
+
+def run_server(port: int):
+    """Run the test server with dynamic skill.md generation."""
+    global BASE_URL
+    BASE_URL = f"http://localhost:{port}"
+
+    handler = partial(DynamicHandler, directory=str(ROOT))
+    with socketserver.TCPServer(("", port), handler) as httpd:
+        print(f"Serving at http://localhost:{port}")
+        print(f"skill.md available at http://localhost:{port}/skill.md (dynamically generated)")
+        print("Press Ctrl+C to stop")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\nShutting down...")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Build or serve GreenCode Constitution skill.md")
+    parser.add_argument("--test", action="store_true", help="Run local test server")
+    parser.add_argument("-p", "--port", type=int, default=3232, help="Port for test server (default: 3232)")
+    args = parser.parse_args()
+
+    if args.test:
+        run_server(args.port)
+    else:
+        skill_md = generate_skill_md()
+        SKILL_OUT.write_text(skill_md)
+        print(f"wrote {SKILL_OUT} ({len(skill_md.splitlines())} lines)")
 
 
 if __name__ == "__main__":
