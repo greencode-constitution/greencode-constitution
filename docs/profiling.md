@@ -24,7 +24,5 @@ sudo sysctl kernel.perf_event_paranoid=-1
 bash <(curl -sfL $BASE_URL/profile.sh || echo exit 1) --json -o before.json -- ./cmd
 # ... apply fix ...
 bash <(curl -sfL $BASE_URL/profile.sh || echo exit 1) --json -o after.json -- ./cmd
-jq -s '{before: .[0].total_energy_joules, after: .[1].total_energy_joules,
-        reduction_pct: ((.[0].total_energy_joules - .[1].total_energy_joules) / .[0].total_energy_joules * 100)}' \
-  before.json after.json
+python3 -c "import json; b,a = [json.load(open(f))['total_energy_joules'] for f in ('before.json','after.json')]; print(f'Before: {b:.2f}J  After: {a:.2f}J  Reduction: {(b-a)/b*100:.1f}%')"
 ```
