@@ -114,8 +114,11 @@ def build_profiling_section() -> str:
 Measure actual energy before/after optimization:
 
 ```bash
-curl -sL {BASE_URL}/profile.sh | bash -s -- <command>
-# With sudo for RAPL access: | sudo -u $USER bash -s -- <command>
+# Enable RAPL access (once per boot)
+sudo sysctl kernel.perf_event_paranoid=-1
+
+# Profile
+bash <(curl -sL {BASE_URL}/profile.sh) <command>
 ```
 
 Outputs CPU joules (RAPL/perf), GPU joules (nvidia-smi), wall/CPU time. Use `--json` for scripted comparisons."""
@@ -163,10 +166,16 @@ class DynamicHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(content)
         elif self.path in ("/profile.sh", "/energy-profile.py"):
-            # Serve tools/* at top level
+            # Serve tools/* at top level, replacing BASE_URL in profile.sh
             file_path = ROOT / "tools" / self.path.lstrip("/")
             if file_path.exists():
-                content = file_path.read_bytes()
+                content = file_path.read_text()
+                if self.path == "/profile.sh":
+                    content = content.replace(
+                        'BASE_URL="${GREENCODE_BASE_URL:-https://greencode-constitution.org}"',
+                        f'BASE_URL="${{GREENCODE_BASE_URL:-{BASE_URL}}}"'
+                    )
+                content = content.encode("utf-8")
                 self.send_response(200)
                 ctype = "text/x-shellscript" if self.path.endswith(".sh") else "text/x-python"
                 self.send_header("Content-Type", ctype)

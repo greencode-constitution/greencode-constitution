@@ -51,20 +51,32 @@ class EnergyResult:
 class RAPLReader:
     """Read CPU energy from RAPL sysfs interface."""
 
-    RAPL_PATH = Path("/sys/class/powercap/intel-rapl")
+    # Try both intel-rapl (common) and amd-rapl paths
+    RAPL_PATHS = [
+        Path("/sys/class/powercap/intel-rapl"),
+        Path("/sys/class/powercap/amd-rapl"),
+    ]
 
     def __init__(self):
-        self.available = self._check_available()
+        self.rapl_path = self._find_rapl_path()
+        self.available = self.rapl_path is not None
         self.domains = self._find_domains() if self.available else []
 
-    def _check_available(self) -> bool:
-        return self.RAPL_PATH.exists() and os.access(self.RAPL_PATH, os.R_OK)
+    def _find_rapl_path(self) -> Optional[Path]:
+        """Find available RAPL sysfs path."""
+        for path in self.RAPL_PATHS:
+            if path.exists() and os.access(path, os.R_OK):
+                return path
+        return None
 
     def _find_domains(self) -> List[Path]:
         """Find RAPL energy counter files (package-level)."""
         domains = []
-        for entry in self.RAPL_PATH.iterdir():
-            if entry.name.startswith("intel-rapl:"):
+        if not self.rapl_path:
+            return domains
+        for entry in self.rapl_path.iterdir():
+            # Match both intel-rapl:N and amd-rapl:N patterns
+            if entry.name.startswith(("intel-rapl:", "amd-rapl:")):
                 energy_file = entry / "energy_uj"
                 if energy_file.exists() and os.access(energy_file, os.R_OK):
                     domains.append(energy_file)
@@ -85,24 +97,39 @@ class RAPLReader:
 class PerfEnergyReader:
     """Read CPU energy using perf stat."""
 
-    def __init__(self):
-        self.available = self._check_available()
+    # Events to try (in order of preference)
+    ENERGY_EVENTS = ["power/energy-pkg/", "power/energy-ram/", "power/energy-cores/"]
 
-    def _check_available(self) -> bool:
+    def __init__(self):
+        self.available_events = self._find_available_events()
+        self.available = len(self.available_events) > 0
+
+    def _find_available_events(self) -> List[str]:
+        """Find which energy events are available on this system."""
         if not shutil.which("perf"):
-            return False
-        # Check if power events are accessible
-        result = subprocess.run(
-            ["perf", "stat", "-e", "power/energy-pkg/", "--", "true"],
-            capture_output=True,
-            text=True
-        )
-        return "not supported" not in result.stderr.lower()
+            return []
+
+        available = []
+        for event in self.ENERGY_EVENTS:
+            try:
+                result = subprocess.run(
+                    ["perf", "stat", "-e", event, "--", "true"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5.0
+                )
+                # Must succeed and show actual Joules reading
+                if result.returncode == 0 and re.search(r"[\d.]+\s+Joules", result.stderr):
+                    available.append(event)
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+        return available
 
     def measure(self, command: List[str]) -> tuple:
         """Run command under perf stat and return (exit_code, cpu_time, energy_joules)."""
+        events = ",".join(self.available_events)
         result = subprocess.run(
-            ["perf", "stat", "-e", "power/energy-pkg/,power/energy-ram/", "--"] + command,
+            ["perf", "stat", "-e", events, "--"] + command,
             capture_output=True,
             text=True
         )
