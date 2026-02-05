@@ -23,9 +23,9 @@ sudo sysctl kernel.perf_event_paranoid=-1
 ## Comparison Workflow
 
 ```bash
-bash <(curl -sL $BASE_URL/profile.sh) --json -o before.json -- ./cmd
+bash <(curl -sfL $BASE_URL/profile.sh || echo exit 1) --json -o before.json -- ./cmd
 # ... apply fix ...
-bash <(curl -sL $BASE_URL/profile.sh) --json -o after.json -- ./cmd
+bash <(curl -sfL $BASE_URL/profile.sh || echo exit 1) --json -o after.json -- ./cmd
 jq -s '{before: .[0].total_energy_joules, after: .[1].total_energy_joules,
         reduction_pct: ((.[0].total_energy_joules - .[1].total_energy_joules) / .[0].total_energy_joules * 100)}' \
   before.json after.json

@@ -118,10 +118,10 @@ Measure actual energy before/after optimization:
 sudo sysctl kernel.perf_event_paranoid=-1
 
 # Profile
-bash <(curl -sL {BASE_URL}/profile.sh) <command>
+bash <(curl -sfL {BASE_URL}/profile.sh || echo exit 1) -- <command>
 ```
 
-Outputs CPU joules (RAPL/perf), GPU joules (nvidia-smi), wall/CPU time. Use `--json` for scripted comparisons."""
+Outputs CPU joules (RAPL/perf), GPU joules (nvidia-smi/rocm-smi/sysfs), wall/CPU time. Use `--json` for scripted comparisons."""
 
 
 def build_skill_md(constitution: str, skill_table: str) -> str:
