@@ -25,6 +25,11 @@ python -m pstats profile.prof
 # In pstats: sort cumtime; stats 20
 ```
 
+**Note**: cProfile does not support Python's `-c` flag. To profile inline code, use:
+```bash
+python -c "import cProfile; cProfile.run('your_code_here', sort='cumtime')"
+```
+
 **py-spy** (sampling profiler, no code changes, works on running processes):
 ```bash
 pip install py-spy
