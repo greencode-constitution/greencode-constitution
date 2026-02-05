@@ -202,13 +202,17 @@ class DynamicHandler(http.server.SimpleHTTPRequestHandler):
             super().do_GET()
 
 
+class ReusableTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
+
 def run_server(port: int):
     """Run the test server with dynamic skill.md generation."""
     global BASE_URL
     BASE_URL = f"http://localhost:{port}"
 
     handler = partial(DynamicHandler, directory=str(ROOT))
-    with socketserver.TCPServer(("", port), handler) as httpd:
+    with ReusableTCPServer(("", port), handler) as httpd:
         print(f"Serving at http://localhost:{port}")
         print(f"skill.md available at http://localhost:{port}/skill.md (dynamically generated)")
         print("Press Ctrl+C to stop")
@@ -216,6 +220,7 @@ def run_server(port: int):
             httpd.serve_forever()
         except KeyboardInterrupt:
             print("\nShutting down...")
+            httpd.shutdown()
 
 
 def main():
