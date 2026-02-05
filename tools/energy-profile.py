@@ -340,6 +340,17 @@ class GPUPowerMonitor:
         return total_joules, avg_watts
 
 
+def run_with_rusage(command: List[str]) -> tuple:
+    """Run command and return (exit_code, wall_time, cpu_time) using os.wait4 for accurate rusage."""
+    wall_start = time.perf_counter()
+    proc = subprocess.Popen(command)
+    _, status, rusage = os.wait4(proc.pid, 0)
+    wall_time = time.perf_counter() - wall_start
+    exit_code = os.waitstatus_to_exitcode(status)
+    cpu_time = rusage.ru_utime + rusage.ru_stime
+    return exit_code, wall_time, cpu_time
+
+
 def measure_energy(command: List[str], gpu_poll_ms: int = 100) -> EnergyResult:
     """Measure energy consumption of a command."""
     perf_reader = PerfEnergyReader()
@@ -353,24 +364,19 @@ def measure_energy(command: List[str], gpu_poll_ms: int = 100) -> EnergyResult:
     # Start GPU monitoring
     gpu_monitor.start()
 
-    wall_start = time.perf_counter()
-
     if perf_reader.available:
         # Use perf stat for measurement
         method = "perf"
+        wall_start = time.perf_counter()
         exit_code, cpu_time, cpu_energy = perf_reader.measure(command)
         wall_time = time.perf_counter() - wall_start
     elif rapl_reader.available:
         # Use RAPL sysfs
         method = "rapl_sysfs"
         energy_start = rapl_reader.read_energy_uj()
-        proc_start = time.process_time()
 
-        result = subprocess.run(command)
-        exit_code = result.returncode
+        exit_code, wall_time, cpu_time = run_with_rusage(command)
 
-        wall_time = time.perf_counter() - wall_start
-        cpu_time = time.process_time() - proc_start
         energy_end = rapl_reader.read_energy_uj()
 
         # Handle counter wraparound
@@ -381,11 +387,7 @@ def measure_energy(command: List[str], gpu_poll_ms: int = 100) -> EnergyResult:
     else:
         # No energy measurement available
         method = "time_only"
-        proc_start = time.process_time()
-        result = subprocess.run(command)
-        exit_code = result.returncode
-        wall_time = time.perf_counter() - wall_start
-        cpu_time = time.process_time() - proc_start
+        exit_code, wall_time, cpu_time = run_with_rusage(command)
 
     # Stop GPU monitoring
     gpu_energy, gpu_avg_power = gpu_monitor.stop()
