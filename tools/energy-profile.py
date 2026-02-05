@@ -46,6 +46,8 @@ class EnergyResult:
     measurement_method: str
     exit_code: int
     command: List[str]
+    gpu_type: Optional[str] = None
+    is_apu: bool = False
 
 
 class RAPLReader:
@@ -154,46 +156,162 @@ class PerfEnergyReader:
 
 
 class GPUPowerMonitor:
-    """Monitor NVIDIA GPU power consumption via nvidia-smi."""
+    """Monitor GPU power consumption via nvidia-smi, rocm-smi, or sysfs."""
 
     def __init__(self, poll_interval_ms: int = 100):
-        self.available = self._check_available()
         self.poll_interval = poll_interval_ms / 1000.0
         self._samples: List[float] = []
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._amd_power_files: List[Path] = []  # Must be before _detect_gpu()
+        self.gpu_type, self.available = self._detect_gpu()
+        self.is_apu = self._detect_apu()
 
-    def _check_available(self) -> bool:
-        if not shutil.which("nvidia-smi"):
+    def _detect_apu(self) -> bool:
+        """Detect if running on an APU (integrated CPU+GPU)."""
+        if self.gpu_type not in ("amd_sysfs", "amd_rocm"):
             return False
-        # Check if we can query power
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits"],
-            capture_output=True,
-            text=True
-        )
-        return result.returncode == 0 and result.stdout.strip()
+        # Check if GPU is on same PCI root as CPU (APU indicator)
+        # APUs typically have PCI device class 0x0380xx (display controller)
+        # and share power domain with CPU
+        try:
+            for card in Path("/sys/class/drm").iterdir():
+                if not card.name.startswith("card") or "-" in card.name:
+                    continue
+                pci_class = card / "device" / "class"
+                if pci_class.exists():
+                    cls = pci_class.read_text().strip()
+                    # 0x038000 = Display controller (APU GPU)
+                    # 0x030000 = VGA controller (discrete GPU)
+                    if cls.startswith("0x0380"):
+                        return True
+        except (IOError, OSError):
+            pass
+        return False
+
+    def _detect_gpu(self) -> tuple:
+        """Detect available GPU and return (type, available)."""
+        # Try NVIDIA first
+        if shutil.which("nvidia-smi"):
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits"],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return "nvidia", True
+
+        # Try AMD ROCm CLI
+        if shutil.which("rocm-smi"):
+            result = subprocess.run(
+                ["rocm-smi", "--showpower", "--json"],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                try:
+                    data = json.loads(result.stdout)
+                    if data:
+                        return "amd_rocm", True
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+        # Try AMD sysfs (hwmon interface)
+        self._amd_power_files = self._find_amd_sysfs_power()
+        if self._amd_power_files:
+            return "amd_sysfs", True
+
+        return None, False
+
+    def _find_amd_sysfs_power(self) -> List[Path]:
+        """Find AMD GPU power files in sysfs."""
+        power_files = []
+        drm_path = Path("/sys/class/drm")
+        if not drm_path.exists():
+            return []
+
+        for card in drm_path.iterdir():
+            if not card.name.startswith("card") or "-" in card.name:
+                continue
+            hwmon_path = card / "device" / "hwmon"
+            if not hwmon_path.exists():
+                continue
+            for hwmon in hwmon_path.iterdir():
+                power_file = hwmon / "power1_average"
+                if power_file.exists() and os.access(power_file, os.R_OK):
+                    power_files.append(power_file)
+        return power_files
+
+    def _read_nvidia_power(self) -> Optional[float]:
+        """Read power from NVIDIA GPU."""
+        try:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits"],
+                capture_output=True,
+                text=True,
+                timeout=1.0
+            )
+            if result.returncode == 0:
+                return sum(
+                    float(line.strip())
+                    for line in result.stdout.strip().split("\n")
+                    if line.strip()
+                )
+        except (subprocess.TimeoutExpired, ValueError):
+            pass
+        return None
+
+    def _read_amd_rocm_power(self) -> Optional[float]:
+        """Read power from AMD GPU via rocm-smi."""
+        try:
+            result = subprocess.run(
+                ["rocm-smi", "--showpower", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=1.0
+            )
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                total_power = 0.0
+                # rocm-smi JSON format: {"card0": {"Power (Avg)": "45.0 W"}, ...}
+                for card, info in data.items():
+                    if card.startswith("card"):
+                        for key, value in info.items():
+                            if "power" in key.lower() and "avg" in key.lower():
+                                # Parse "45.0 W" -> 45.0
+                                match = re.search(r"([\d.]+)", str(value))
+                                if match:
+                                    total_power += float(match.group(1))
+                                break
+                return total_power if total_power > 0 else None
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, ValueError):
+            pass
+        return None
+
+    def _read_amd_sysfs_power(self) -> Optional[float]:
+        """Read power from AMD GPU via sysfs hwmon (microwatts -> watts)."""
+        total_power = 0.0
+        for power_file in self._amd_power_files:
+            try:
+                with open(power_file) as f:
+                    # Value is in microwatts
+                    total_power += int(f.read().strip()) / 1_000_000
+            except (IOError, ValueError):
+                pass
+        return total_power if total_power > 0 else None
 
     def _poll_loop(self):
         """Background thread that polls GPU power."""
+        if self.gpu_type == "nvidia":
+            read_fn = self._read_nvidia_power
+        elif self.gpu_type == "amd_rocm":
+            read_fn = self._read_amd_rocm_power
+        else:
+            read_fn = self._read_amd_sysfs_power
         while self._running:
-            try:
-                result = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits"],
-                    capture_output=True,
-                    text=True,
-                    timeout=1.0
-                )
-                if result.returncode == 0:
-                    # Sum power across all GPUs
-                    total_power = sum(
-                        float(line.strip())
-                        for line in result.stdout.strip().split("\n")
-                        if line.strip()
-                    )
-                    self._samples.append(total_power)
-            except (subprocess.TimeoutExpired, ValueError):
-                pass
+            power = read_fn()
+            if power is not None:
+                self._samples.append(power)
             time.sleep(self.poll_interval)
 
     def start(self):
@@ -283,7 +401,11 @@ def measure_energy(command: List[str], gpu_poll_ms: int = 100) -> EnergyResult:
         cpu_avg_power = cpu_energy / wall_time if wall_time > 0 else None
         total_energy = cpu_energy
         if gpu_energy is not None:
-            total_energy += gpu_energy
+            if gpu_monitor.is_apu and cpu_energy is not None:
+                # APU: GPU sensor (PPT) includes package power, subtract CPU to isolate GPU
+                gpu_energy = max(0, gpu_energy - cpu_energy)
+                gpu_avg_power = gpu_energy / wall_time if wall_time > 0 else 0
+            total_energy = cpu_energy + gpu_energy
 
     return EnergyResult(
         wall_time_seconds=wall_time,
@@ -295,7 +417,9 @@ def measure_energy(command: List[str], gpu_poll_ms: int = 100) -> EnergyResult:
         gpu_avg_power_watts=gpu_avg_power,
         measurement_method=method,
         exit_code=exit_code,
-        command=command
+        command=command,
+        gpu_type=gpu_monitor.gpu_type,
+        is_apu=gpu_monitor.is_apu
     )
 
 
@@ -338,9 +462,12 @@ def format_human(result: EnergyResult) -> str:
     if result.cpu_energy_joules is None and result.gpu_energy_joules is None:
         lines.append("Energy: (not available - no RAPL/perf access)")
 
+    method_info = result.measurement_method
+    if result.gpu_type:
+        method_info += f", gpu={result.gpu_type}"
     lines.extend([
         "",
-        f"Measurement method: {result.measurement_method}",
+        f"Measurement method: {method_info}",
         "=" * 60,
     ])
 
