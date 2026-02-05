@@ -1,6 +1,4 @@
-# Energy Profiling Reference
-
-## Options
+### Options
 
 ```
 --json          JSON output
@@ -8,19 +6,19 @@
 -o, --output F  Write to file
 ```
 
-## Requirements
+### Requirements
 
 - Linux with `perf`
 - Optional: `nvidia-smi` for GPU
 
-## Enable RAPL Access
+### Enable RAPL Access
 
 ```bash
 # Once per boot
 sudo sysctl kernel.perf_event_paranoid=-1
 ```
 
-## Comparison Workflow
+### Comparison Workflow
 
 ```bash
 bash <(curl -sfL $BASE_URL/profile.sh || echo exit 1) --json -o before.json -- ./cmd

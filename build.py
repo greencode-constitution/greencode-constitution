@@ -58,7 +58,6 @@ GUIDE_DEFS = [
     ("detection",      "Cross-language grep/regex detection patterns"),
     ("arch-detection", "CLI commands and PromQL for infrastructure audits"),
     ("overview",       "Anti-pattern overview with rationale and references"),
-    ("profiling",      "Energy measurement wrapper and profiling tool reference"),
 ]
 
 
@@ -108,20 +107,22 @@ def build_skill_table() -> str:
 
 
 def build_profiling_section() -> str:
-    """Build the energy profiling section."""
+    """Build the energy profiling section by embedding docs/profiling.md content."""
+    profiling_doc = (DOCS / "profiling.md").read_text()
+    # Replace $BASE_URL placeholder in the profiling doc
+    profiling_doc = profiling_doc.replace("$BASE_URL", BASE_URL)
+
     return f"""## Energy Profiling
 
 Measure actual energy before/after optimization:
 
 ```bash
-# Enable RAPL access (once per boot)
-sudo sysctl kernel.perf_event_paranoid=-1
-
-# Profile
 bash <(curl -sfL {BASE_URL}/profile.sh || echo exit 1) -- <command>
 ```
 
-Outputs CPU joules (RAPL/perf), GPU joules (nvidia-smi/rocm-smi/sysfs), wall/CPU time. Use `--json` for scripted comparisons."""
+Outputs CPU joules (RAPL/perf), GPU joules (nvidia-smi/rocm-smi/sysfs), wall/CPU time.
+
+{profiling_doc}"""
 
 
 def build_skill_md(constitution: str, skill_table: str) -> str:
