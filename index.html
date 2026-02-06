@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GreenCode Constitution</title>
+<meta name="description" content="A structured hierarchy of energy-efficiency principles for guiding LLM agents in automated code optimization.">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0f0a;
+  --surface:#141a12;
+  --surface2:#1c2418;
+  --border:#2a3a24;
+  --green:#4ade80;
+  --green-dim:#22c55e;
+  --green-glow:#16a34a;
+  --text:#e2e8df;
+  --muted:#94a38e;
+  --code-bg:#111810;
+  --font-mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font-sans);
+  background:var(--bg);
+  color:var(--text);
+  line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--green);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* Hero */
+.hero{
+  min-height:90vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:2rem 1.5rem;
+  position:relative;
+  overflow:hidden;
+}
+.hero::before{
+  content:'';
+  position:absolute;
+  top:-40%;left:50%;
+  width:800px;height:800px;
+  transform:translateX(-50%);
+  background:radial-gradient(circle,rgba(74,222,128,.08) 0%,transparent 70%);
+  pointer-events:none;
+}
+.hero h1{
+  font-size:clamp(2.5rem,6vw,4.5rem);
+  font-weight:800;
+  letter-spacing:-.03em;
+  line-height:1.1;
+  margin-bottom:.75rem;
+}
+.hero h1 .green{color:var(--green)}
+.hero .tagline{
+  font-size:clamp(1.05rem,2.2vw,1.35rem);
+  color:var(--muted);
+  max-width:640px;
+  margin-bottom:2.5rem;
+}
+.hero .stats{
+  display:flex;
+  gap:2.5rem;
+  flex-wrap:wrap;
+  justify-content:center;
+  margin-bottom:2.5rem;
+}
+.hero .stat{text-align:center}
+.hero .stat strong{
+  display:block;
+  font-size:2rem;
+  color:var(--green);
+  font-weight:700;
+}
+.hero .stat span{font-size:.85rem;color:var(--muted)}
+.cta-row{display:flex;gap:1rem;flex-wrap:wrap;justify-content:center}
+.btn{
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.75rem 1.75rem;
+  border-radius:8px;
+  font-weight:600;
+  font-size:1rem;
+  transition:all .2s;
+  border:1.5px solid transparent;
+}
+.btn-primary{
+  background:var(--green-dim);
+  color:var(--bg);
+}
+.btn-primary:hover{background:var(--green);text-decoration:none}
+.btn-outline{
+  border-color:var(--border);
+  color:var(--text);
+  background:transparent;
+}
+.btn-outline:hover{border-color:var(--green);text-decoration:none}
+
+/* Sections */
+section{padding:5rem 1.5rem}
+.container{max-width:960px;margin:0 auto}
+.section-label{
+  font-size:.8rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  color:var(--green);
+  margin-bottom:.5rem;
+}
+.section-title{
+  font-size:clamp(1.6rem,3.5vw,2.4rem);
+  font-weight:700;
+  margin-bottom:1rem;
+}
+.section-subtitle{
+  color:var(--muted);
+  max-width:600px;
+  margin-bottom:3rem;
+  font-size:1.05rem;
+}
+
+/* What is it */
+.what-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  gap:1.5rem;
+}
+.card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:1.75rem;
+}
+.card .icon{
+  font-size:1.6rem;
+  margin-bottom:.75rem;
+  display:block;
+  width:2.8rem;height:2.8rem;
+  line-height:2.8rem;
+  text-align:center;
+  border-radius:8px;
+  background:var(--surface2);
+}
+.card h3{font-size:1.1rem;margin-bottom:.5rem}
+.card p{color:var(--muted);font-size:.95rem}
+
+/* Tiers */
+.tier-list{display:flex;flex-direction:column;gap:1.25rem}
+.tier{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:1.5rem 1.75rem;
+  display:grid;
+  grid-template-columns:auto 1fr;
+  gap:0 1.25rem;
+  align-items:start;
+}
+.tier .badge{
+  font-size:.75rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  padding:.3rem .75rem;
+  border-radius:6px;
+  white-space:nowrap;
+  grid-row:1/3;
+  align-self:center;
+}
+.tier .badge.critical{background:#dc262622;color:#f87171}
+.tier .badge.high{background:#f59e0b22;color:#fbbf24}
+.tier .badge.medium{background:#3b82f622;color:#60a5fa}
+.tier .badge.low{background:#6b728022;color:#9ca3af}
+.tier h3{font-size:1.05rem;margin-bottom:.25rem}
+.tier p{color:var(--muted);font-size:.9rem}
+
+/* Usage */
+.usage-steps{counter-reset:step;display:flex;flex-direction:column;gap:2.5rem}
+.step{
+  display:grid;
+  grid-template-columns:3rem 1fr;
+  gap:0 1.25rem;
+  align-items:start;
+}
+.step::before{
+  counter-increment:step;
+  content:counter(step);
+  font-size:1.3rem;
+  font-weight:800;
+  color:var(--green);
+  width:3rem;height:3rem;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:50%;
+  border:2px solid var(--border);
+  background:var(--surface);
+}
+.step h3{font-size:1.05rem;margin-bottom:.5rem}
+.step p{color:var(--muted);font-size:.95rem;margin-bottom:.75rem}
+pre{
+  background:var(--code-bg);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:1rem 1.25rem;
+  overflow-x:auto;
+  font-family:var(--font-mono);
+  font-size:.88rem;
+  line-height:1.6;
+  color:var(--text);
+}
+code{font-family:var(--font-mono);font-size:.9em}
+p code,.step code,li code{
+  background:var(--surface2);
+  padding:.15em .4em;
+  border-radius:4px;
+  font-size:.88em;
+}
+
+/* Skills grid */
+.skills-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+  gap:.75rem;
+  margin-top:1.5rem;
+}
+.skill-chip{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:.65rem 1rem;
+  font-size:.9rem;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+}
+.skill-chip .dot{
+  width:8px;height:8px;
+  border-radius:50%;
+  background:var(--green-dim);
+  flex-shrink:0;
+}
+
+/* How it works */
+.how-it-works{background:var(--surface)}
+.flow{
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  flex-wrap:wrap;
+  justify-content:center;
+  margin-top:2rem;
+}
+.flow-item{
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:1rem 1.5rem;
+  text-align:center;
+  min-width:160px;
+}
+.flow-item strong{display:block;margin-bottom:.25rem;font-size:.95rem}
+.flow-item span{color:var(--muted);font-size:.82rem}
+.flow-arrow{color:var(--green);font-size:1.5rem;flex-shrink:0}
+
+/* Results */
+.results-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:1rem;
+}
+.result-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:1.5rem;
+  text-align:center;
+}
+.result-card .pct{
+  font-size:2rem;
+  font-weight:800;
+  color:var(--green);
+}
+.result-card .label{
+  display:block;
+  margin-top:.25rem;
+  color:var(--muted);
+  font-size:.9rem;
+}
+
+/* Profiling */
+.profile-box{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:2rem;
+  margin-top:2rem;
+}
+.profile-box h3{margin-bottom:.75rem}
+.profile-box p{color:var(--muted);font-size:.95rem;margin-bottom:1rem}
+
+/* Footer */
+footer{
+  border-top:1px solid var(--border);
+  padding:2.5rem 1.5rem;
+  text-align:center;
+  color:var(--muted);
+  font-size:.85rem;
+}
+footer a{color:var(--green)}
+
+/* Mobile tweaks */
+@media(max-width:600px){
+  .hero .stats{gap:1.5rem}
+  .tier{grid-template-columns:1fr}
+  .tier .badge{justify-self:start;margin-bottom:.5rem}
+  .step{grid-template-columns:2.5rem 1fr}
+  .step::before{width:2.5rem;height:2.5rem;font-size:1rem}
+  .flow-arrow{display:none}
+  .flow{gap:.75rem}
+}
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<section class="hero">
+  <h1><span class="green">GreenCode</span> Constitution</h1>
+  <p class="tagline">A structured hierarchy of energy-efficiency principles for guiding LLM agents in automated code optimization.</p>
+  <div class="stats">
+    <div class="stat"><strong>35+</strong><span>Anti-patterns covered</span></div>
+    <div class="stat"><strong>4 Tiers</strong><span>Prioritized severity</span></div>
+    <div class="stat"><strong>15+</strong><span>Language &amp; infra skills</span></div>
+  </div>
+  <div class="cta-row">
+    <a href="#usage" class="btn btn-primary">Get started</a>
+    <a href="https://github.com/antheas/greencode-constitution" class="btn btn-outline">GitHub</a>
+  </div>
+</section>
+
+<!-- What is it -->
+<section id="about">
+  <div class="container">
+    <p class="section-label">About</p>
+    <h2 class="section-title">What is the GreenCode Constitution?</h2>
+    <p class="section-subtitle">A principled rulebook that turns any LLM coding agent into an energy-efficiency auditor, without ad-hoc prompting.</p>
+
+    <div class="what-grid">
+      <div class="card">
+        <span class="icon">&#x1F4DC;</span>
+        <h3>Constitutional AI for code</h3>
+        <p>Instead of ad-hoc prompts, the agent evaluates every refactoring against a formal hierarchy of principles spanning algorithmic complexity, memory behavior, and infrastructure utilization.</p>
+      </div>
+      <div class="card">
+        <span class="icon">&#x26A1;</span>
+        <h3>Measurable impact</h3>
+        <p>Designed for real-world codebases. The agent scans repositories, proposes principled refactorings, and measures energy impact using built-in profiling tools.</p>
+      </div>
+      <div class="card">
+        <span class="icon">&#x1F6E1;</span>
+        <h3>Safety-first design</h3>
+        <p>Meta-principles guarantee correctness, safety, and API stability. The agent self-critiques every proposal against a checklist before presenting it to a human reviewer.</p>
+      </div>
+      <div class="card">
+        <span class="icon">&#x1F50C;</span>
+        <h3>Pluggable skill system</h3>
+        <p>The constitution defines <em>what</em> to optimize. Language and infrastructure-specific skill documents define <em>how</em>. Skills are fetched on demand based on project detection.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Principle tiers -->
+<section id="principles" class="how-it-works">
+  <div class="container">
+    <p class="section-label">Principles</p>
+    <h2 class="section-title">Tiered priority system</h2>
+    <p class="section-subtitle">When principles conflict, higher tiers always win. Within the same tier, prefer the higher measured energy impact.</p>
+
+    <div class="tier-list">
+      <div class="tier">
+        <span class="badge critical">Critical</span>
+        <h3>Tier 1 &mdash; Eliminate first</h3>
+        <p>Order-of-magnitude waste: N+1 queries, unbuffered I/O, O(n&sup2;) string concatenation, missing indexes, recursive event loops, unmemoized recursion, idle cloud resources, unbatched DB operations.</p>
+      </div>
+      <div class="tier">
+        <span class="badge high">High</span>
+        <h3>Tier 2 &mdash; Address promptly</h3>
+        <p>Significant waste: blocking I/O on hot paths, heap allocation in tight loops, resource leaks, SELECT&nbsp;*, uncompressed payloads, linear-search lookups, no auto-scaling, missing caching, unbounded queries, chatty microservices.</p>
+      </div>
+      <div class="tier">
+        <span class="badge medium">Medium</span>
+        <h3>Tier 3 &mdash; Recommend</h3>
+        <p>Moderate waste: unsized collections, invariant computation in loops, JSON for internal APIs, oversized pods, interpreted CPU-bound services, bloated container images, missing circuit breakers.</p>
+      </div>
+      <div class="tier">
+        <span class="badge low">Low</span>
+        <h3>Tier 4 &mdash; Note only</h3>
+        <p>Minor or contextual: dead code, redundant environments, non-ephemeral CI, carbon-unaware scheduling, unoptimized client bundles.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section id="how">
+  <div class="container">
+    <p class="section-label">Architecture</p>
+    <h2 class="section-title">How it works</h2>
+    <p class="section-subtitle">The constitution and skill documents form a two-layer system. The constitution governs priority, scope, and conflict resolution. Skills provide implementation details per technology.</p>
+
+    <div class="flow">
+      <div class="flow-item">
+        <strong>skill.md</strong>
+        <span>Constitution + skill table</span>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-item">
+        <strong>Detect project</strong>
+        <span>find patterns in repo</span>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-item">
+        <strong>Fetch skills</strong>
+        <span>Language &amp; infra docs</span>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-item">
+        <strong>Audit &amp; refactor</strong>
+        <span>Principled proposals</span>
+      </div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-item">
+        <strong>Self-critique</strong>
+        <span>7-point checklist</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Usage -->
+<section id="usage" class="how-it-works">
+  <div class="container">
+    <p class="section-label">Usage</p>
+    <h2 class="section-title">Get started in minutes</h2>
+    <p class="section-subtitle">Add the GreenCode Constitution as a skill to your LLM coding agent. The agent fetches technology-specific guidance on demand.</p>
+
+    <div class="usage-steps">
+      <div class="step">
+        <div>
+          <h3>Fetch the skill document</h3>
+          <p>The generated <code>skill.md</code> contains the full constitution plus a skill resolution table. Give it to your agent as a system prompt, tool, or skill file.</p>
+<pre>curl -sfL https://greencode-constitution.org/skill.md -o skill.md</pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h3>Add it to your agent</h3>
+          <p>Depending on your framework, attach <code>skill.md</code> as a system prompt, a skill document, or a file the agent can read. For Claude Code, place it in your project's <code>.claude/</code> directory or reference it as a custom skill.</p>
+<pre># Example: add as a Claude Code project instruction
+cp skill.md .claude/skill-greencode.md
+
+# Or reference the URL directly in your agent config
+# skill_url: https://greencode-constitution.org/skill.md</pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h3>Let the agent detect and fetch skills</h3>
+          <p>The skill document instructs the agent to scan the repository for technology markers (e.g., <code>requirements.txt</code>, <code>pom.xml</code>, <code>Dockerfile</code>) and fetch matching skill docs from <code>greencode-constitution.org/docs/</code>.</p>
+<pre># The agent runs detection automatically, then fetches e.g.:
+# https://greencode-constitution.org/docs/code/python.md
+# https://greencode-constitution.org/docs/architecture/docker.md</pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h3>Measure with the energy profiler</h3>
+          <p>Run the built-in energy profiler to measure actual CPU and GPU energy consumption before and after optimization.</p>
+<pre>bash &lt;(curl -sfL https://greencode-constitution.org/profile.sh) -- python my_app.py</pre>
+          <p>Outputs CPU joules (RAPL/perf), GPU joules (nvidia-smi/rocm-smi), wall time, and CPU time.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:3rem;margin-bottom:1rem">Available skills</h3>
+    <p style="color:var(--muted);font-size:.95rem;margin-bottom:.5rem"><strong>Languages</strong></p>
+    <div class="skills-grid">
+      <div class="skill-chip"><span class="dot"></span>Python</div>
+      <div class="skill-chip"><span class="dot"></span>Java</div>
+      <div class="skill-chip"><span class="dot"></span>JavaScript / TypeScript</div>
+      <div class="skill-chip"><span class="dot"></span>C / C++</div>
+      <div class="skill-chip"><span class="dot"></span>C#</div>
+      <div class="skill-chip"><span class="dot"></span>Go</div>
+      <div class="skill-chip"><span class="dot"></span>Ruby</div>
+      <div class="skill-chip"><span class="dot"></span>SQL</div>
+    </div>
+    <p style="color:var(--muted);font-size:.95rem;margin-top:1.25rem;margin-bottom:.5rem"><strong>Infrastructure</strong></p>
+    <div class="skills-grid">
+      <div class="skill-chip"><span class="dot"></span>Docker</div>
+      <div class="skill-chip"><span class="dot"></span>Kubernetes</div>
+      <div class="skill-chip"><span class="dot"></span>Terraform</div>
+      <div class="skill-chip"><span class="dot"></span>AWS</div>
+      <div class="skill-chip"><span class="dot"></span>GCP</div>
+      <div class="skill-chip"><span class="dot"></span>PostgreSQL</div>
+      <div class="skill-chip"><span class="dot"></span>MySQL</div>
+      <div class="skill-chip"><span class="dot"></span>Redis</div>
+    </div>
+    <p style="color:var(--muted);font-size:.95rem;margin-top:1.25rem;margin-bottom:.5rem"><strong>Guides</strong></p>
+    <div class="skills-grid">
+      <div class="skill-chip"><span class="dot"></span>Cloud energy patterns</div>
+      <div class="skill-chip"><span class="dot"></span>Detection patterns</div>
+      <div class="skill-chip"><span class="dot"></span>Arch detection (CLI)</div>
+      <div class="skill-chip"><span class="dot"></span>Anti-pattern overview</div>
+    </div>
+  </div>
+</section>
+
+<!-- Results (placeholder — uncomment when real results are available)
+<section id="results">
+  <div class="container">
+    <p class="section-label">Results</p>
+    <h2 class="section-title">Measured energy reductions</h2>
+    <p class="section-subtitle">Evaluated on open-source projects. The agent optimized the software that runs LLMs.</p>
+
+    <div class="results-grid">
+      <div class="result-card">
+        <span class="pct">&darr; 4.2%</span>
+        <span class="label">llama.cpp</span>
+      </div>
+      <div class="result-card">
+        <span class="pct">&darr; 3.1%</span>
+        <span class="label">vLLM</span>
+      </div>
+      <div class="result-card">
+        <span class="pct">&darr; 8.3%</span>
+        <span class="label">PostgreSQL</span>
+      </div>
+      <div class="result-card">
+        <span class="pct">&darr; 5.5%</span>
+        <span class="label">Redis</span>
+      </div>
+    </div>
+
+    <div class="profile-box">
+      <h3>Self-critique protocol</h3>
+      <p>Every proposed refactoring passes a 7-point checklist before the agent presents it to a human reviewer: correctness, safety, scope, principle citation, impact estimation, trade-off assessment, and test compatibility. If any check fails, the proposal is revised or discarded.</p>
+    </div>
+  </div>
+</section>
+-->
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <p>GreenCode Constitution &middot; <a href="https://github.com/antheas/greencode-constitution">Source on GitHub</a></p>
+    <p style="margin-top:.5rem">Principled energy optimization for software, guided by constitutional AI.</p>
+  </div>
+</footer>
+
+</body>
+</html>
