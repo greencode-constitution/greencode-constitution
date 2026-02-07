@@ -155,6 +155,117 @@ class PerfEnergyReader:
         return result.returncode, cpu_time, energy_joules if energy_joules > 0 else None
 
 
+class CPUPowerEstimator:
+    """Estimate CPU power consumption using frequency and utilization when hardware measurement unavailable."""
+
+    # TDP estimates for common CPU types (watts)
+    TDP_ESTIMATES = {
+        "arm_high_perf": 15.0,  # Cortex-X series, Apple M-series performance cores
+        "arm_efficiency": 5.0,   # Cortex-A series efficiency cores
+        "x86_desktop": 65.0,     # Typical desktop CPU
+        "x86_laptop": 15.0,      # Typical laptop CPU
+        "default": 25.0,         # Conservative default
+    }
+
+    def __init__(self):
+        self.cpu_type = self._detect_cpu_type()
+        self.base_tdp = self._get_base_tdp()
+        self.cpu_count = os.cpu_count() or 1
+
+    def _detect_cpu_type(self) -> str:
+        """Detect CPU architecture and type."""
+        try:
+            with open("/proc/cpuinfo") as f:
+                cpuinfo = f.read().lower()
+                if "cortex-x" in cpuinfo or "apple" in cpuinfo:
+                    return "arm_high_perf"
+                elif "cortex-a" in cpuinfo or "aarch64" in cpuinfo or "arm" in cpuinfo:
+                    return "arm_efficiency"
+                elif "intel" in cpuinfo or "amd" in cpuinfo:
+                    # Check if laptop (harder to detect, use conservative estimate)
+                    return "x86_laptop"
+        except IOError:
+            pass
+        return "default"
+
+    def _get_base_tdp(self) -> float:
+        """Get base TDP estimate for this CPU type."""
+        return self.TDP_ESTIMATES.get(self.cpu_type, self.TDP_ESTIMATES["default"])
+
+    def _read_cpu_frequencies(self) -> List[float]:
+        """Read current frequencies for all CPUs in MHz."""
+        frequencies = []
+        for cpu_id in range(self.cpu_count):
+            freq_file = Path(f"/sys/devices/system/cpu/cpu{cpu_id}/cpufreq/scaling_cur_freq")
+            try:
+                if freq_file.exists():
+                    with open(freq_file) as f:
+                        # Value is in kHz, convert to MHz
+                        frequencies.append(int(f.read().strip()) / 1000.0)
+            except (IOError, ValueError):
+                pass
+        return frequencies
+
+    def _read_max_frequencies(self) -> List[float]:
+        """Read maximum frequencies for all CPUs in MHz."""
+        frequencies = []
+        for cpu_id in range(self.cpu_count):
+            freq_file = Path(f"/sys/devices/system/cpu/cpu{cpu_id}/cpufreq/cpuinfo_max_freq")
+            try:
+                if freq_file.exists():
+                    with open(freq_file) as f:
+                        frequencies.append(int(f.read().strip()) / 1000.0)
+            except (IOError, ValueError):
+                pass
+        return frequencies
+
+    def estimate_energy(self, wall_time: float, cpu_time: float) -> Optional[float]:
+        """
+        Estimate CPU energy consumption in joules.
+
+        Power modeling:
+        - Dynamic power scales approximately as f³ (P ∝ V² × f, V ∝ f for DVFS)
+        - Use average frequency ratio during execution
+        - Scale by CPU utilization (cpu_time / wall_time)
+        - Idle power is minimal with modern power management (~2-5% TDP per active core)
+        """
+        if wall_time <= 0:
+            return None
+
+        # Read current and max frequencies
+        cur_freqs = self._read_cpu_frequencies()
+        max_freqs = self._read_max_frequencies()
+
+        # CPU utilization (clamped to number of cores)
+        utilization = min(cpu_time / wall_time, self.cpu_count)
+        util_ratio = utilization / self.cpu_count
+
+        if not cur_freqs or not max_freqs:
+            # Fallback: use CPU utilization only
+            # Idle power is ~3% TDP, active power scales linearly with utilization
+            idle_power = 0.03 * self.base_tdp
+            active_power = 0.97 * self.base_tdp * util_ratio
+            avg_power = idle_power + active_power
+            return avg_power * wall_time
+
+        # Calculate frequency scaling factor (average across cores)
+        freq_ratios = [cur / max_val for cur, max_val in zip(cur_freqs, max_freqs)]
+        avg_freq_ratio = sum(freq_ratios) / len(freq_ratios) if freq_ratios else 1.0
+
+        # Power scales as f³ for dynamic component (P ∝ V² × f, V ∝ f)
+        freq_scale = avg_freq_ratio ** 3
+
+        # Modern CPUs with good power gating: minimal idle, most power is dynamic
+        # Idle: ~3% of TDP (package + IO)
+        # Active: scales with frequency³ and utilization
+        idle_power = 0.03 * self.base_tdp
+        active_power = 0.97 * self.base_tdp * freq_scale * util_ratio
+        avg_power = idle_power + active_power
+
+        energy_joules = avg_power * wall_time
+        return energy_joules
+
+
 class GPUPowerMonitor:
     """Monitor GPU power consumption via nvidia-smi, rocm-smi, or sysfs."""
 
@@ -355,6 +466,7 @@ def measure_energy(command: List[str], gpu_poll_ms: int = 100) -> EnergyResult:
     """Measure energy consumption of a command."""
     perf_reader = PerfEnergyReader()
     rapl_reader = RAPLReader()
+    cpu_estimator = CPUPowerEstimator()
     gpu_monitor = GPUPowerMonitor(gpu_poll_ms)
 
     cpu_energy = None
@@ -385,9 +497,10 @@ def measure_energy(command: List[str], gpu_poll_ms: int = 100) -> EnergyResult:
         else:
             cpu_energy = None  # Counter wrapped
     else:
-        # No energy measurement available
-        method = "time_only"
+        # Use software-based power estimation
+        method = "estimated"
         exit_code, wall_time, cpu_time = run_with_rusage(command)
+        cpu_energy = cpu_estimator.estimate_energy(wall_time, cpu_time)
 
     # Stop GPU monitoring
     gpu_energy, gpu_avg_power = gpu_monitor.stop()
@@ -441,8 +554,9 @@ def format_human(result: EnergyResult) -> str:
     ]
 
     if result.cpu_energy_joules is not None:
+        energy_label = "Energy (estimated):" if result.measurement_method == "estimated" else "Energy:"
         lines.extend([
-            "Energy:",
+            energy_label,
             f"  CPU energy: {result.cpu_energy_joules:>10.2f} J",
         ])
         if result.cpu_avg_power_watts:
