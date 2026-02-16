@@ -1,0 +1,2 @@
+# Ignore generated benchmark docs in root (generated from templates/)
+/*.md

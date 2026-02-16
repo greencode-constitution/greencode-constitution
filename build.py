@@ -60,12 +60,28 @@ GUIDE_DEFS = [
     ("overview",       "Anti-pattern overview with rationale and references"),
 ]
 
+# Benchmark detection: check for specific project indicators
+BENCH_DETECT_MAP = [
+    ("llama.cpp", ["ggml/", "CMakeLists.txt"]),  # llama.cpp has ggml/ directory
+]
+
+BENCH_DEFS = [
+    ("llamacpp", "llama.cpp inference with Qwen3-8B (488 input / 512 output tokens)"),
+]
+
+BENCHES_TEMPLATES = ROOT / "benches" / "templates"
+
 
 def build_detect_command() -> str:
-    """Build the one-liner the agent should run to detect project technologies."""
+    """Build the one-liner the agent should run to detect project technologies and benchmarks."""
     filenames = [p for p, _ in DETECT_MAP if "*" not in p]
     name_args = " -o ".join(f'-name "{f}"' for f in filenames)
-    return f'find . -maxdepth 3 \\( {name_args} \\) -printf "%f\\n" 2>/dev/null | sort -u'
+    tech_detect = f'find . -maxdepth 3 \\( {name_args} \\) -printf "%f\\n" 2>/dev/null | sort -u'
+
+    # Add benchmark detection
+    bench_detect = '[ -d "ggml" ] && [ -f "CMakeLists.txt" ] && grep -q "llama" CMakeLists.txt && echo "llama.cpp [bench]"'
+
+    return f'{tech_detect}; {bench_detect}'
 
 
 def build_skill_table() -> str:
@@ -75,11 +91,11 @@ def build_skill_table() -> str:
 
     lines.append("### Detection")
     lines.append("")
-    lines.append("Run once to identify project technologies:")
+    lines.append("Run once to identify project technologies and benchmarks:")
     lines.append("")
     lines.append(f"```sh\n{detect_cmd}\n```")
     lines.append("")
-    lines.append("Match output against the table below. Fetch only matching skills from")
+    lines.append("Match output against the tables below. Fetch only matching skills from")
     lines.append(f"`{BASE_URL}/docs/{{path}}.md`.")
     lines.append("")
 
@@ -103,6 +119,21 @@ def build_skill_table() -> str:
         if (DOCS / f"{guide_id}.md").exists():
             lines.append(f"| {guide_id} | {description} |")
 
+    lines.append("")
+
+    lines.append("### Benchmarks")
+    lines.append("")
+    lines.append(f"Fetch from `{BASE_URL}/benches/{{bench}}.md` when detected.")
+    lines.append("")
+    lines.append("| Detection Output | Benchmark | Description |")
+    lines.append("|------------------|-----------|-------------|")
+    for bench_id, description in BENCH_DEFS:
+        bench_template = BENCHES_TEMPLATES / f"{bench_id}.md"
+        if bench_template.exists():
+            # Map bench_id to detection output
+            detect_name = "llama.cpp [bench]" if bench_id == "llamacpp" else bench_id
+            lines.append(f"| {detect_name} | {bench_id} | {description} |")
+
     return "\n".join(lines)
 
 
@@ -123,6 +154,8 @@ bash <(curl -sfL {BASE_URL}/profile.sh || echo exit 1) -- <command>
 Outputs CPU joules (RAPL/perf), GPU joules (nvidia-smi/rocm-smi/sysfs), wall/CPU time.
 
 {profiling_doc}"""
+
+
 
 
 def build_skill_md(constitution: str, skill_table: str) -> str:
@@ -179,6 +212,35 @@ class DynamicHandler(http.server.SimpleHTTPRequestHandler):
                 content = content.encode("utf-8")
                 self.send_response(200)
                 ctype = "text/x-shellscript" if self.path.endswith(".sh") else "text/x-python"
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+            else:
+                self.send_error(404)
+        elif self.path.startswith("/benches/"):
+            # Serve benchmark files - .md from templates/, scripts from benches/
+            if self.path.endswith(".md"):
+                # Serve from templates directory
+                filename = Path(self.path).name
+                file_path = ROOT / "benches" / "templates" / filename
+            else:
+                # Serve scripts directly from benches/
+                file_path = ROOT / self.path.lstrip("/")
+
+            if file_path.exists():
+                content = file_path.read_text()
+                # Replace $BASE_URL in bench docs
+                if self.path.endswith(".md"):
+                    content = content.replace("$BASE_URL", BASE_URL)
+                content = content.encode("utf-8")
+                self.send_response(200)
+                if self.path.endswith(".sh"):
+                    ctype = "text/x-shellscript"
+                elif self.path.endswith(".md"):
+                    ctype = "text/markdown; charset=utf-8"
+                else:
+                    ctype = "text/plain"
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
@@ -244,6 +306,17 @@ def main():
             if src.exists():
                 shutil.copy2(src, dst)
         print("copied tools/{profile.sh,energy-profile.py} to top level")
+
+        # Process benchmark docs from templates/ - replace $BASE_URL for static hosting
+        templates_dir = ROOT / "benches" / "templates"
+        benches_dir = ROOT / "benches"
+        if templates_dir.exists():
+            for template_file in templates_dir.glob("*.md"):
+                content = template_file.read_text()
+                processed = content.replace("$BASE_URL", DEFAULT_BASE_URL)
+                output_file = benches_dir / template_file.name
+                output_file.write_text(processed)
+                print(f"processed {template_file.name} -> benches/{template_file.name}")
 
 
 if __name__ == "__main__":
