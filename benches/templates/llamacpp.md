@@ -15,7 +15,7 @@ bash <(curl -sfL $BASE_URL/benches/llamacpp/prepare.sh)
 ```
 
 Creates:
-- Python venv at `./venv`
+- Python venv at `./.venv`
 - Downloads Qwen3-8B-Q4_K_M model to `./models/`
 
 ### 2. Build with optimizations
