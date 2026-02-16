@@ -52,11 +52,20 @@ curl -sfL $BASE_URL/benches/llamacpp/test.sh > /tmp/llamacpp-test.sh && chmod +x
 ## Workflow
 
 1. Run baseline benchmark to measure initial performance
-2. Apply optimizations from constitution and skills
-3. Rebuild: `curl -sfL $BASE_URL/benches/llamacpp/build.sh | bash`
+2. **Profile kernel-level hotspots** to identify optimization targets:
+   ```bash
+   nsys profile --stats=true ./build/bin/llama-bench -m models/Qwen3-8B-Q4_K_M.gguf -p 488 -n 128 -r 1 2>&1 | tail -40
+   ```
+   Focus on the "CUDA Kernel Statistics" table. Only optimize kernels that account for >5% of total GPU time (per Article IV). Use a shorter `-n` value here for faster profiling — kernel proportions are stable across generation lengths.
+3. For each hot kernel, use `ncu` to determine if it is memory-bound or compute-bound:
+   ```bash
+   ncu --set full -k "kernel_name" ./build/bin/llama-bench -m models/Qwen3-8B-Q4_K_M.gguf -p 488 -n 32 -r 1
+   ```
+4. Apply targeted optimizations from constitution and skills
+5. Rebuild: `curl -sfL $BASE_URL/benches/llamacpp/build.sh | bash`
    - Append `| tail -5` to see final build summary
-4. Re-run benchmark with profiler
-5. Compare results: lower joules and/or higher throughput = improvement
+6. Re-run benchmark with profiler
+7. Compare results: lower joules and/or higher throughput = improvement
 
 ## Benchmark Details
 

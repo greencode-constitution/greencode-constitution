@@ -32,6 +32,8 @@ DETECT_MAP = [
     ("tsconfig.json",      "code/javascript"),
     ("CMakeLists.txt",     "code/c-cpp"),
     ("Makefile",           "code/c-cpp"),
+    ("*.cu",               "code/cuda"),
+    ("*.cuh",              "code/cuda"),
     ("*.csproj",           "code/csharp"),
     ("*.sln",              "code/csharp"),
     ("Gemfile",            "code/ruby"),

@@ -35,3 +35,21 @@ rm /tmp/energy-XXXX-*.json
 ```
 
 **Note:** Always check the `measurement_method` field in the JSON output. **If `estimated` was used, warn the user** that results are approximations with significantly lower accuracy than hardware-based measurements. For reliable comparisons, enable perf/RAPL access and ensure both measurements use the same method.
+
+### Kernel-Level Profiling (GPU)
+
+Energy profiling tells you *how much* energy is consumed. Kernel-level profiling tells you *where* it is consumed. **Always profile before optimizing** (Article IV).
+
+When NVIDIA GPU is detected (`*.cu` / `*.cuh` files in project), use Nsight tools:
+
+```bash
+# Step 1: Identify which kernels dominate GPU time
+nsys profile --stats=true ./your_program
+
+# Step 2: Deep-dive into a specific hot kernel
+ncu --set full -k "kernel_name" ./your_program
+```
+
+See the `code/cuda` skill for detailed usage, metric interpretation, and a decision tree for memory-bound vs compute-bound kernels.
+
+For non-NVIDIA GPUs or CPU-only workloads, use `perf` flamegraphs (see `code/c-cpp` skill) or language-specific profilers (see matching language skill).
