@@ -16,7 +16,7 @@ However, the rapid advancement of AI also raises important questions about safet
 What are the most important considerations when developing AI systems to ensure they benefit society while minimizing potential risks?"
 
 echo "==> Running llama.cpp benchmark..."
-./build/bin/llama-bench -m models/Qwen3-8B-Q4_K_M.gguf -p 488 -n 512 -r 1 2>&1 | awk '
+./build/bin/llama-bench -m models/Qwen3-8B-Q4_K_M.gguf -p 1000 -n 2500 -r 1 2>&1 | awk '
 /pp[0-9]+/ {
     match($0, /pp([0-9]+)/, arr);
     prompt_tokens=arr[1];
