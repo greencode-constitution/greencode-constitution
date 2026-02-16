@@ -74,14 +74,43 @@ BENCHES_TEMPLATES = ROOT / "benches" / "templates"
 
 def build_detect_command() -> str:
     """Build the one-liner the agent should run to detect project technologies and benchmarks."""
+    return f'bash <(curl -sfL {BASE_URL}/detect.sh)'
+
+
+def generate_detect_script() -> str:
+    """Generate detect.sh script content from DETECT_MAP and BENCH_DETECT_MAP."""
+    lines = ["#!/bin/bash"]
+    lines.append("# Auto-generated detection script for GreenCode Constitution")
+    lines.append("# Detects project technologies and available benchmarks")
+    lines.append("")
+    lines.append("set -euo pipefail")
+    lines.append("")
+    lines.append("# Detect technologies by finding marker files")
+
+    # Build find command from DETECT_MAP
     filenames = [p for p, _ in DETECT_MAP if "*" not in p]
     name_args = " -o ".join(f'-name "{f}"' for f in filenames)
-    tech_detect = f'find . -maxdepth 3 \\( {name_args} \\) -printf "%f\\n" 2>/dev/null | sort -u'
+    lines.append(f'find . -maxdepth 3 \\( {name_args} \\) -printf "%f\\n" 2>/dev/null | sort -u')
+    lines.append("")
 
     # Add benchmark detection
-    bench_detect = '[ -d "ggml" ] && [ -f "CMakeLists.txt" ] && grep -q "llama" CMakeLists.txt && echo "llama.cpp [bench]"'
+    lines.append("# Detect available benchmarks")
+    for bench_name, indicators in BENCH_DETECT_MAP:
+        conditions = []
+        for indicator in indicators:
+            if indicator.endswith("/"):
+                conditions.append(f'[ -d "{indicator.rstrip("/")}" ]')
+            else:
+                conditions.append(f'[ -f "{indicator}" ]')
 
-    return f'{tech_detect}; {bench_detect}'
+        # Special case for llama.cpp - also check CMakeLists.txt content
+        if bench_name == "llama.cpp":
+            conditions.append('grep -q "llama" CMakeLists.txt 2>/dev/null')
+
+        condition_str = " && ".join(conditions)
+        lines.append(f'{condition_str} && echo "{bench_name} [bench]"')
+
+    return "\n".join(lines) + "\n"
 
 
 def build_skill_table() -> str:
@@ -199,6 +228,14 @@ class DynamicHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)
+        elif self.path == "/detect.sh":
+            # Generate detect.sh dynamically from DETECT_MAP
+            content = generate_detect_script().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/x-shellscript")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
         elif self.path in ("/profile.sh", "/energy-profile.py"):
             # Serve tools/* at top level, replacing BASE_URL in profile.sh
             file_path = ROOT / "tools" / self.path.lstrip("/")
@@ -306,6 +343,11 @@ def main():
             if src.exists():
                 shutil.copy2(src, dst)
         print("copied tools/{profile.sh,energy-profile.py} to top level")
+
+        # Generate detect.sh from DETECT_MAP
+        detect_script = generate_detect_script()
+        (ROOT / "detect.sh").write_text(detect_script)
+        print("generated detect.sh from DETECT_MAP")
 
         # Process benchmark docs from templates/ - replace $BASE_URL for static hosting
         templates_dir = ROOT / "benches" / "templates"
