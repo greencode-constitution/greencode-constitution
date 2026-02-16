@@ -54,6 +54,7 @@ curl -sfL $BASE_URL/benches/llamacpp/test.sh > /tmp/llamacpp-test.sh && chmod +x
 1. Run baseline benchmark to measure initial performance
 2. Apply optimizations from constitution and skills
 3. Rebuild: `curl -sfL $BASE_URL/benches/llamacpp/build.sh | bash`
+   - Append `| tail -5` to see final build summary
 4. Re-run benchmark with profiler
 5. Compare results: lower joules and/or higher throughput = improvement
 
