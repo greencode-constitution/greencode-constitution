@@ -35,7 +35,7 @@ Produces:
 Executes standardized inference workload:
 
 ```bash
-bash <(curl -sfL $BASE_URL/profile.sh || echo exit 1) -- bash <(curl -sfL $BASE_URL/benches/llamacpp/test.sh)
+curl -sfL $BASE_URL/benches/llamacpp/test.sh > /tmp/llamacpp-test.sh && chmod +x /tmp/llamacpp-test.sh && bash <(curl -sfL $BASE_URL/profile.sh || echo exit 1) -- /tmp/llamacpp-test.sh
 ```
 
 ## Output
@@ -53,7 +53,7 @@ bash <(curl -sfL $BASE_URL/profile.sh || echo exit 1) -- bash <(curl -sfL $BASE_
 
 1. Run baseline benchmark to measure initial performance
 2. Apply optimizations from constitution and skills
-3. Rebuild: `bash <(curl -sfL $BASE_URL/benches/llamacpp/build.sh)`
+3. Rebuild: `curl -sfL $BASE_URL/benches/llamacpp/build.sh | bash`
 4. Re-run benchmark with profiler
 5. Compare results: lower joules and/or higher throughput = improvement
 
