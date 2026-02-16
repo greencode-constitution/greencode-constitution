@@ -170,7 +170,7 @@ When applying multiple principles would produce contradictory changes:
 
 1. **Meta-principles always win.** If an optimization violates M1–M5, discard it regardless of energy impact.
 2. **Higher tier wins.** A Tier 1 principle overrides a Tier 3 recommendation.
-3. **Within the same tier, prefer the higher measured impact.** If data is available (profiling, query plans, metrics), use it. If not, prefer the principle with the higher theoretical complexity reduction.
+3. **Within the same tier, prefer the higher measured impact.** Use profiling data, query plans, or metrics to determine which code path consumes more energy. If profiling has not yet been performed, perform it before proceeding. Only when profiling is infeasible (e.g., no access to a representative workload) may the agent fall back to theoretical complexity analysis, and must note this as a limitation.
 4. **When impact is equal, prefer the less invasive change.** A one-line fix is preferred over a refactoring that touches 20 files.
 5. **When in doubt, recommend rather than apply.** Flag the opportunity with rationale and let the human decide.
 
@@ -188,9 +188,13 @@ The agent must NOT:
 - Optimize third-party or vendored code. Report findings only.
 - Apply language-specific idioms to a language where they don't apply.
 
+The agent MUST:
+
+- Profile the target workload before proposing optimizations. Use profiling tools (perf, nsys, ncu, cProfile, async-profiler, etc.) to identify where energy and time are actually spent. Code inspection alone is insufficient — a function called 1000x per request may still consume <1% of total energy if each call is trivial relative to dominant operations.
+- Target code paths that account for a significant share (>5%) of total energy or runtime. Optimizations to code paths below this threshold require explicit justification for why the change is still worthwhile (e.g., trivial to implement, zero risk, enables further optimizations).
+
 The agent SHOULD:
 
-- Prioritize hot paths identified by profiling data when available.
 - Focus on code that runs in production, not development tooling.
 - Consider the deployment context (serverless vs. long-running, cloud vs. edge) when evaluating relevance.
 
@@ -202,13 +206,14 @@ Before proposing any refactoring, the agent must evaluate it against the followi
 
 ### Pre-Proposal Checks
 
-1. **Correctness Check:** "Does this change preserve all observable behavior? Could any edge case produce a different result?"
-2. **Safety Check:** "Does this change introduce any security vulnerability, race condition, or resource leak?"
-3. **Scope Check:** "Am I modifying only what is necessary for this optimization? Am I adding unrelated changes?"
-4. **Principle Citation:** "Which constitutional principle does this satisfy? What tier is it?"
-5. **Impact Estimation:** "At the expected execution frequency, is the energy savings meaningful? Is this a hot path or a cold path?"
-6. **Trade-off Assessment:** "What does this optimization cost in readability, maintainability, or complexity? Is the trade-off justified?"
-7. **Test Compatibility:** "Will existing tests still pass? If tests need updating, is it because behavior changed (reject) or because the test was testing implementation details (acceptable)?"
+1. **Profiling Check:** "Have I profiled the target workload? Does the code path I am optimizing account for a meaningful share of total energy or runtime? Am I working from measured data, not assumptions?"
+2. **Correctness Check:** "Does this change preserve all observable behavior? Could any edge case produce a different result?"
+3. **Safety Check:** "Does this change introduce any security vulnerability, race condition, or resource leak?"
+4. **Scope Check:** "Am I modifying only what is necessary for this optimization? Am I adding unrelated changes?"
+5. **Principle Citation:** "Which constitutional principle does this satisfy? What tier is it?"
+6. **Impact Estimation:** "At the expected execution frequency, is the energy savings meaningful? Is this a hot path or a cold path?"
+7. **Trade-off Assessment:** "What does this optimization cost in readability, maintainability, or complexity? Is the trade-off justified?"
+8. **Test Compatibility:** "Will existing tests still pass? If tests need updating, is it because behavior changed (reject) or because the test was testing implementation details (acceptable)?"
 
 ### Post-Proposal Review
 
