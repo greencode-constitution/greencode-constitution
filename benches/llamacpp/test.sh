@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # Run llama.cpp batch benchmark
-# Emulates a RAG subagent scenario: 8 parallel queries with long context, short output.
-# npl=8 triggers MMQ kernels, making both prefill and generation compute-bound.
+# Emulates a RAG subagent scenario: large prompt (8x2048 concatenated contexts), short output.
+# Prefill is compute-bound (MMQ/GEMM on large token batch); generation is kept short.
 
-echo "==> Running llama.cpp batch benchmark (npl=8, pp2048, tg128)..."
-./build/bin/llama-bench -m models/Qwen3-8B-Q4_K_M.gguf -npl 8 -p 2048 -n 128 -r 1 2>&1 | awk '
+echo "==> Running llama.cpp batch benchmark (pp16384, tg128)..."
+./build/bin/llama-bench -m models/Qwen3-8B-Q4_K_M.gguf -p 16384 -n 128 -r 1 2>&1 | awk '
 /pp[0-9]+/ {
     match($0, /pp([0-9]+)/, arr);
     prompt_tokens=arr[1];
