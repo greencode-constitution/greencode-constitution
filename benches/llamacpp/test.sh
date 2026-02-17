@@ -1,25 +1,33 @@
 #!/bin/bash
 set -euo pipefail
 
-# Run llama.cpp batch benchmark
-# Emulates a RAG subagent scenario: large prompt (8x2048 concatenated contexts), short output.
-# Prefill is compute-bound (MMQ/GEMM on large token batch); generation is kept short.
+# Run llama.cpp batched benchmark
+# Emulates a RAG subagent scenario: 8 parallel queries with 2048-token context, 128-token output.
+# npl=8 triggers MMQ kernels, making both prefill and generation compute-bound.
+# Uses llama-batched-bench which supports parallel sequences (-npl).
 
-echo "==> Running llama.cpp batch benchmark (pp16384, tg128)..."
-./build/bin/llama-bench -m models/Qwen3-8B-Q4_K_M.gguf -p 16384 -n 128 -r 1 2>&1 | awk '
-/pp[0-9]+/ {
-    match($0, /pp([0-9]+)/, arr);
-    prompt_tokens=arr[1];
-    match($0, /([0-9]+\.[0-9]+) ±/, speed);
-    prompt_speed=speed[1]
-}
-/tg[0-9]+/ {
-    match($0, /tg([0-9]+)/, arr);
-    gen_tokens=arr[1];
-    match($0, /([0-9]+\.[0-9]+) ±/, speed);
-    gen_speed=speed[1]
+echo "==> Running llama.cpp batched benchmark (npl=8, pp2048, tg128)..."
+./build/bin/llama-batched-bench \
+    -m models/Qwen3-8B-Q4_K_M.gguf \
+    -c 32768 \
+    -b 2048 \
+    -ub 512 \
+    -npp 2048 \
+    -ntg 128 \
+    -npl 8 \
+    2>&1 | awk '
+/^\|[[:space:]]+[0-9]/ {
+    gsub(/\|/, " ")
+    pp = $1
+    tg = $2
+    batch = $3
+    pp_speed = $6
+    tg_speed = $8
+    total_speed = $10
 }
 END {
-    print "Input:  " prompt_tokens " tokens @ " prompt_speed " t/s"
-    print "Output: " gen_tokens " tokens @ " gen_speed " t/s"
+    print "Batch:  " batch " sequences"
+    print "Input:  " pp " tokens @ " pp_speed " t/s"
+    print "Output: " tg " tokens @ " tg_speed " t/s"
+    print "Total:  " total_speed " t/s"
 }'
