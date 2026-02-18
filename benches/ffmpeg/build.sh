@@ -20,7 +20,7 @@ if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
     fi
 
     if [ -n "$NVCC" ]; then
-        EXTRA_FLAGS="--enable-cuda-nvcc --nvcc=$NVCC --enable-ffnvcodec --enable-nvenc --enable-nvdec --enable-cuvid"
+        EXTRA_FLAGS="--enable-nonfree --enable-cuda-nvcc --nvcc=$NVCC --enable-ffnvcodec --enable-nvenc --enable-nvdec --enable-cuvid"
         echo "    Using nvcc: $NVCC"
     fi
 else
