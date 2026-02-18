@@ -66,11 +66,13 @@ GUIDE_DEFS = [
 BENCH_DETECT_MAP = [
     ("llama.cpp", ["ggml/", "CMakeLists.txt"]),  # llama.cpp has ggml/ directory
     ("pasteur", ["src/pasteur/", "conf/"]),  # pasteur has src/pasteur/ and conf/ directories
+    ("ffmpeg", ["libavcodec/", "libavfilter/"]),  # FFmpeg has libavcodec/ and libavfilter/
 ]
 
 BENCH_DEFS = [
     ("llamacpp", "llama.cpp inference with Qwen3-8B (488 input / 512 output tokens)"),
     ("pasteur", "Pasteur data synthesis pipeline (mimic_core.mare)"),
+    ("ffmpeg", "FFmpeg transcoding pipeline (1080p CPU / 4K GPU, 60s)"),
 ]
 
 BENCHES_TEMPLATES = ROOT / "benches" / "templates"
