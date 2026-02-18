@@ -34,6 +34,7 @@ echo "==> Configuring FFmpeg..."
     --enable-libx265 \
     --enable-libfreetype \
     --enable-libfontconfig \
+    --enable-libharfbuzz \
     --enable-libass \
     $EXTRA_FLAGS
 

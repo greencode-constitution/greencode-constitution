@@ -9,7 +9,7 @@ sudo apt-get update -qq
 sudo apt-get install -y -qq \
     nasm yasm \
     libx264-dev libx265-dev \
-    libfreetype-dev libfontconfig-dev \
+    libfreetype-dev libfontconfig-dev libharfbuzz-dev \
     libass-dev \
     pkg-config
 
