@@ -26,6 +26,8 @@ Executes the mimic_core.mare synthesis pipeline:
 curl -sfL $BASE_URL/benches/pasteur/test.sh > /tmp/pasteur-test.sh && chmod +x /tmp/pasteur-test.sh && bash <(curl -sfL $BASE_URL/profile.sh || echo exit 1) -- /tmp/pasteur-test.sh
 ```
 
+You can use `_MULTIPROCESS=0` to disable multiprocessing for more stable profiling results.
+
 ## Output
 
 **Energy consumption:**
