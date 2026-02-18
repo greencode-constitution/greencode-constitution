@@ -15,8 +15,9 @@
 
 The tool tries methods in order: **perf** (hardware counters) → **rapl_sysfs** → **estimated** (lower accuracy, TDP-based). The output shows which method was used. For accurate results, enable perf/RAPL access below.
 
-### Enable RAPL Access
+### Enable Perf/RAPL Access
 
+RUN THIS AT THE BEGINNING, NOT AFTER BENCHES. IF METHOD REMAINS ESTIMATED, DO NOT TRY TO IMPROVISE AND LET IT BE.
 ```bash
 # Once per boot (enables perf and RAPL methods)
 sudo sysctl kernel.perf_event_paranoid=-1
