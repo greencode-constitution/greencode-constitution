@@ -35,8 +35,10 @@ Produces:
 Executes standardized inference workload:
 
 ```bash
-curl -sfL $BASE_URL/benches/llamacpp/test.sh > /tmp/llamacpp-test.sh && chmod +x /tmp/llamacpp-test.sh && bash <(curl -sfL $BASE_URL/profile.sh || echo exit 1) -- /tmp/llamacpp-test.sh
+curl -sfL $BASE_URL/benches/llamacpp/{fn}.sh > /tmp/llamacpp-test.sh && chmod +x /tmp/llamacpp-test.sh && bash <(curl -sfL $BASE_URL/profile.sh || echo exit 1) -- /tmp/llamacpp-test.sh
 ```
+
+Where `{fn}` is the filename for the benchmark script: `test-simple.sh` for one agent, and `test-rag.sh` for multi-agent RAG scenario (focuses on input token processing and total throughput).
 
 ## Output
 
@@ -69,8 +71,6 @@ curl -sfL $BASE_URL/benches/llamacpp/test.sh > /tmp/llamacpp-test.sh && chmod +x
 
 ## Benchmark Details
 
-- **Prompt:** 488 tokens (AI ethics discussion with question)
-- **Generation:** 512 tokens (forced via `--ignore-eos`)
 - **Model:** Qwen3-8B-Q4_K_M (4.68 GiB quantized)
 - **Backend:** CUDA with 99 GPU layers
 - **Consistency:** Single run, deterministic workload

@@ -10,4 +10,4 @@ echo "==> Building llama.cpp (parallel)..."
 cmake --build build --config Release -j$(nproc)
 
 echo "==> Build complete!"
-echo "    - Binary: ./build/bin/llama-batched-bench"
+echo "    - Binaries: ./build/bin/llama-{batched-bench,bench,cli}"
