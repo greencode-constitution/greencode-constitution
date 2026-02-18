@@ -84,23 +84,44 @@ def build_detect_command() -> str:
 
 
 def generate_detect_script() -> str:
-    """Generate detect.sh script content from DETECT_MAP and BENCH_DETECT_MAP."""
+    """Generate detect.sh script content from DETECT_MAP and BENCH_DETECT_MAP.
+
+    Outputs a ready-to-use skill table with only matching rows, plus bench detections.
+    """
     lines = ["#!/bin/bash"]
     lines.append("# Auto-generated detection script for GreenCode Constitution")
     lines.append("# Detects project technologies and available benchmarks")
     lines.append("")
     lines.append("set -euo pipefail")
     lines.append("")
-    lines.append("# Detect technologies by finding marker files")
 
-    # Build find command from DETECT_MAP
-    filenames = [p for p, _ in DETECT_MAP if "*" not in p]
-    name_args = " -o ".join(f'-name "{f}"' for f in filenames)
-    lines.append(f'find . -maxdepth 3 \\( {name_args} \\) -printf "%f\\n" 2>/dev/null | sort -u')
-    lines.append("")
+    # Group patterns by skill so each skill is only printed once
+    skill_patterns: dict[str, list[str]] = {}
+    for pattern, skill in DETECT_MAP:
+        if (DOCS / f"{skill}.md").exists():
+            skill_patterns.setdefault(skill, []).append(pattern)
 
-    # Add benchmark detection
-    lines.append("# Detect available benchmarks")
+    # Build bench lookup: bench_name -> (bench_id, description)
+    bench_lookup = {}
+    for bench_id, description in BENCH_DEFS:
+        detect_names = {"llamacpp": "llama.cpp"}
+        detect_name = detect_names.get(bench_id, bench_id)
+        bench_lookup[detect_name] = (bench_id, description)
+
+    # Output unified table with skills and benchmarks
+    lines.append("# Detect technologies and benchmarks, output matching table rows")
+    lines.append('echo "| Detection | Type | Fetch |"')
+    lines.append('echo "|-----------|------|-------|"')
+
+    # Skill detection
+    for skill, patterns in skill_patterns.items():
+        conditions = []
+        for pattern in patterns:
+            conditions.append(f'find . -maxdepth 3 -name "{pattern}" -print -quit 2>/dev/null | grep -q .')
+        condition_str = " || ".join(conditions)
+        lines.append(f'{{ {condition_str}; }} && echo "| {patterns[0]} | skill | {skill} |" || true')
+
+    # Benchmark detection
     for bench_name, indicators in BENCH_DETECT_MAP:
         conditions = []
         for indicator in indicators:
@@ -113,8 +134,9 @@ def generate_detect_script() -> str:
         if bench_name == "llama.cpp":
             conditions.append('grep -q "llama" CMakeLists.txt 2>/dev/null')
 
+        bench_id, _ = bench_lookup.get(bench_name, (bench_name, ""))
         condition_str = " && ".join(conditions)
-        lines.append(f'{condition_str} && echo "{bench_name} [bench]"')
+        lines.append(f'{condition_str} && echo "| {bench_name} | bench | {bench_id} |" || true')
 
     return "\n".join(lines) + "\n"
 
@@ -130,18 +152,9 @@ def build_skill_table() -> str:
     lines.append("")
     lines.append(f"```sh\n{detect_cmd}\n```")
     lines.append("")
-    lines.append("Match output against the tables below. Fetch only matching skills from")
-    lines.append(f"`{BASE_URL}/docs/{{path}}.md`.")
-    lines.append("")
-
-    lines.append("### Pattern to Skill")
-    lines.append("")
-    lines.append("| Pattern | Skill |")
-    lines.append("|---------|-------|")
-    for pattern, skill in DETECT_MAP:
-        if (DOCS / f"{skill}.md").exists():
-            lines.append(f"| {pattern} | {skill} |")
-
+    lines.append("Output is a `| Detection | Type | Fetch |` table with only matching rows.")
+    lines.append(f"Fetch each detected skill from `{BASE_URL}/docs/{{fetch}}.md`")
+    lines.append(f"and each detected bench from `{BASE_URL}/benches/{{fetch}}.md`.")
     lines.append("")
 
     lines.append("### Guides")
@@ -153,22 +166,6 @@ def build_skill_table() -> str:
     for guide_id, description in GUIDE_DEFS:
         if (DOCS / f"{guide_id}.md").exists():
             lines.append(f"| {guide_id} | {description} |")
-
-    lines.append("")
-
-    lines.append("### Benchmarks")
-    lines.append("")
-    lines.append(f"Fetch from `{BASE_URL}/benches/{{bench}}.md` when detected.")
-    lines.append("")
-    lines.append("| Detection Output | Benchmark | Description |")
-    lines.append("|------------------|-----------|-------------|")
-    for bench_id, description in BENCH_DEFS:
-        bench_template = BENCHES_TEMPLATES / f"{bench_id}.md"
-        if bench_template.exists():
-            # Map bench_id to detection output name
-            detect_names = {"llamacpp": "llama.cpp"}
-            detect_name = detect_names.get(bench_id, bench_id)
-            lines.append(f"| {detect_name} [bench] | {bench_id} | {description} |")
 
     return "\n".join(lines)
 
