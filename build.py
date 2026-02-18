@@ -65,10 +65,12 @@ GUIDE_DEFS = [
 # Benchmark detection: check for specific project indicators
 BENCH_DETECT_MAP = [
     ("llama.cpp", ["ggml/", "CMakeLists.txt"]),  # llama.cpp has ggml/ directory
+    ("pasteur", ["src/pasteur/", "conf/"]),  # pasteur has src/pasteur/ and conf/ directories
 ]
 
 BENCH_DEFS = [
     ("llamacpp", "llama.cpp inference with Qwen3-8B (488 input / 512 output tokens)"),
+    ("pasteur", "Pasteur data synthesis pipeline (mimic_core.mare)"),
 ]
 
 BENCHES_TEMPLATES = ROOT / "benches" / "templates"
@@ -161,9 +163,10 @@ def build_skill_table() -> str:
     for bench_id, description in BENCH_DEFS:
         bench_template = BENCHES_TEMPLATES / f"{bench_id}.md"
         if bench_template.exists():
-            # Map bench_id to detection output
-            detect_name = "llama.cpp [bench]" if bench_id == "llamacpp" else bench_id
-            lines.append(f"| {detect_name} | {bench_id} | {description} |")
+            # Map bench_id to detection output name
+            detect_names = {"llamacpp": "llama.cpp"}
+            detect_name = detect_names.get(bench_id, bench_id)
+            lines.append(f"| {detect_name} [bench] | {bench_id} | {description} |")
 
     return "\n".join(lines)
 
