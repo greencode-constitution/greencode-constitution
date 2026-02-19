@@ -36,6 +36,8 @@ echo "==> Configuring FFmpeg..."
     --enable-libfontconfig \
     --enable-libharfbuzz \
     --enable-libass \
+    --disable-stripping \
+    --extra-cflags="-g" \
     $EXTRA_FLAGS
 
 echo "==> Building FFmpeg (parallel)..."
