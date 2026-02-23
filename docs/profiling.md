@@ -1,15 +1,17 @@
 ### Options
 
 ```
---json          JSON output
---gpu-poll-ms N GPU poll interval (default: 100)
--o, --output F  Write to file
+--json            JSON output
+--gpu-poll-ms N   GPU poll interval (default: 100)
+--plug-poll-s N   Smart plug poll interval in seconds (default: 10)
+-o, --output F    Write to file
 ```
 
 ### Requirements
 
 - Linux with `perf`
 - Optional: `nvidia-smi` for GPU
+- Optional: `tinytuya` + SmartLife/Tuya smart plug for wall power
 
 ### Measurement Methods
 
@@ -36,6 +38,10 @@ rm /tmp/energy-XXXX-*.json
 ```
 
 **Note:** Always check the `measurement_method` field in the JSON output. **If `estimated` was used, warn the user** that results are approximations with significantly lower accuracy than hardware-based measurements. For reliable comparisons, enable perf/RAPL access and ensure both measurements use the same method.
+
+### Wall Power (Smart Plug)
+
+Optional SmartLife/Tuya smart plug support measures total wall power (including PSU losses, RAM, fans). Configured via `SMARTPLUG_*` env vars — see the docstring at the top of `tools/energy-profile.py` for setup details. Only useful for benchmarks **> 1 minute** (firmware refreshes readings every ~15-30s). Do not look up or troubleshoot plug configuration unless the user specifically asks for help setting one up.
 
 ### Kernel-Level Profiling (GPU)
 

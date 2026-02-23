@@ -8,11 +8,40 @@ Usage:
 Options:
     --json          Output results as JSON
     --gpu-poll-ms   GPU polling interval in milliseconds (default: 100)
+    --plug-poll-s   Smart plug polling interval in seconds (default: 10)
     -o, --output    Write results to file instead of stdout
 
 Requirements:
     - Linux with RAPL support (Intel CPUs) or perf access
     - nvidia-smi for GPU measurements (optional)
+    - tinytuya for SmartLife/Tuya plug wall power measurement (optional)
+
+SmartLife/Tuya Plug (wall power measurement):
+    Set these environment variables in your bashrc to enable.
+    SMARTPLUG_ID is always required. Then configure either local or cloud mode:
+
+    Common:
+        SMARTPLUG_ID         Device ID (required)
+        SMARTPLUG_DPS_POWER  DPS index/code for power reading (auto-detected)
+        SMARTPLUG_DPS_SCALE  Scale divisor for raw value to watts (auto-detected)
+
+    Local LAN mode (preferred):
+        SMARTPLUG_IP         Device LAN IP address
+        SMARTPLUG_KEY        Local key
+        SMARTPLUG_VERSION    Protocol version (default: 3.3)
+
+    Note: Tuya breakers/energy meters update power readings every ~15-30s
+    in firmware. The plug poll interval (--plug-poll-s, default 10s) controls
+    how often we query the device. Shorter intervals won't improve resolution.
+
+    Cloud API mode (works remotely, rate-limited):
+        SMARTPLUG_API_KEY    Tuya IoT Platform API/Client ID
+        SMARTPLUG_API_SECRET Tuya IoT Platform API/Client Secret
+        SMARTPLUG_API_REGION Data center region (default: eu)
+                             Options: cn, us, us-e, eu, eu-w, sg, in
+
+    To obtain credentials, install tinytuya and run:
+        python -m tinytuya wizard
 
 Example:
     ./energy-profile.py -- python train_model.py
@@ -20,6 +49,7 @@ Example:
 """
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -48,6 +78,10 @@ class EnergyResult:
     command: List[str]
     gpu_type: Optional[str] = None
     is_apu: bool = False
+    plug_energy_joules: Optional[float] = None
+    plug_avg_power_watts: Optional[float] = None
+    plug_mode: Optional[str] = None
+    plug_samples: Optional[int] = None
 
 
 class RAPLReader:
@@ -451,6 +485,274 @@ class GPUPowerMonitor:
         return total_joules, avg_watts
 
 
+try:
+    import tinytuya
+except ImportError:
+    tinytuya = None
+
+
+class SmartPlugMonitor:
+    """Monitor wall power consumption via SmartLife/Tuya smart plug.
+
+    Supports two modes:
+    - Local LAN: direct device connection (fast polling, no rate limits)
+    - Cloud API: via Tuya IoT Platform (works remotely, rate-limited)
+
+    Local is preferred when both are configured.
+    """
+
+    # Common DPS indices for power on Tuya smart plugs
+    # 19/5/4: standard plugs (deciwatts typically)
+    # 118: Tuya breakers/energy meters (watts)
+    POWER_DPS_CANDIDATES = ["19", "5", "4", "118"]
+    # Common cloud API code names for power
+    POWER_CODE_CANDIDATES = ["cur_power", "power", "Power"]
+    # Tuya energy meters encode V/I/P in phase_a as base64 struct
+    PHASE_CODES = ["phase_a", "phase_b", "phase_c"]
+
+    def __init__(self, poll_interval_s: float = 10.0):
+        self.poll_interval = poll_interval_s
+        self._samples: List[float] = []
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._start_time: float = 0.0
+        self._stop_time: float = 0.0
+        self._device = None  # local OutletDevice
+        self._cloud = None   # Cloud API client
+        self._cloud_device_id: Optional[str] = None
+        self._power_dps: Optional[str] = None
+        self._power_code: Optional[str] = None
+        self._dps_scale: float = 1.0
+        self._mode: Optional[str] = None  # "local" or "cloud"
+        self.available = False
+        self._setup()
+
+    def _setup(self):
+        """Configure plug from environment variables. Try local first, then cloud."""
+        if tinytuya is None:
+            return
+
+        plug_id = os.environ.get("SMARTPLUG_ID")
+        if not plug_id:
+            return
+
+        user_dps = os.environ.get("SMARTPLUG_DPS_POWER")
+        user_scale = os.environ.get("SMARTPLUG_DPS_SCALE")
+
+        # Try local LAN first (faster, no rate limits)
+        plug_ip = os.environ.get("SMARTPLUG_IP")
+        plug_key = os.environ.get("SMARTPLUG_KEY")
+        if plug_ip and plug_key:
+            if self._setup_local(plug_id, plug_ip, plug_key, user_dps, user_scale):
+                return
+
+        # Try cloud API
+        api_key = os.environ.get("SMARTPLUG_API_KEY")
+        api_secret = os.environ.get("SMARTPLUG_API_SECRET")
+        if api_key and api_secret:
+            self._setup_cloud(plug_id, api_key, api_secret, user_dps, user_scale)
+
+    def _setup_local(self, plug_id, plug_ip, plug_key, user_dps, user_scale) -> bool:
+        """Set up local LAN connection. Returns True on success."""
+        version = float(os.environ.get("SMARTPLUG_VERSION", "3.3"))
+        try:
+            self._device = tinytuya.OutletDevice(plug_id, plug_ip, plug_key)
+            self._device.set_version(version)
+        except Exception:
+            self._device = None
+            return False
+
+        try:
+            status = self._device.status()
+        except Exception:
+            self._device = None
+            return False
+
+        dps = status.get("dps", {})
+        if not dps:
+            self._device = None
+            return False
+
+        if user_dps:
+            self._power_dps = user_dps
+            self._dps_scale = float(user_scale) if user_scale else 10.0
+        else:
+            for candidate in self.POWER_DPS_CANDIDATES:
+                if candidate in dps:
+                    raw = dps[candidate]
+                    if isinstance(raw, (int, float)) and raw > 0:
+                        # Heuristic: if value > 500, likely deciwatts (divide by 10)
+                        self._dps_scale = 10.0 if raw > 500 else 1.0
+                        self._power_dps = candidate
+                        break
+            if user_scale:
+                self._dps_scale = float(user_scale)
+
+        if self._power_dps is None:
+            self._device = None
+            return False
+
+        self._mode = "local"
+        self.available = True
+        return True
+
+    def _setup_cloud(self, plug_id, api_key, api_secret, user_dps, user_scale):
+        """Set up Tuya Cloud API connection."""
+        api_region = os.environ.get("SMARTPLUG_API_REGION", "eu")
+        try:
+            self._cloud = tinytuya.Cloud(
+                apiRegion=api_region,
+                apiKey=api_key,
+                apiSecret=api_secret,
+                apiDeviceID=plug_id,
+            )
+            self._cloud_device_id = plug_id
+        except Exception:
+            self._cloud = None
+            return
+
+        # Test connection and detect power code
+        try:
+            result = self._cloud.getstatus(plug_id)
+        except Exception:
+            self._cloud = None
+            return
+
+        if not result or not result.get("success"):
+            self._cloud = None
+            return
+
+        status_list = result.get("result", [])
+
+        if user_dps:
+            # User specified a code name to use
+            self._power_code = user_dps
+            self._dps_scale = float(user_scale) if user_scale else 10.0
+        else:
+            # Auto-detect from cloud status response
+            # First try direct power codes
+            for item in status_list:
+                code = item.get("code", "")
+                value = item.get("value")
+                if code in self.POWER_CODE_CANDIDATES:
+                    if isinstance(value, (int, float)) and value >= 0:
+                        self._dps_scale = 10.0 if value > 500 else 1.0
+                        self._power_code = code
+                        break
+            # Then try phase_a encoded format (Tuya energy meters)
+            if self._power_code is None:
+                for item in status_list:
+                    if item.get("code") in self.PHASE_CODES:
+                        power = self._parse_phase_power(item.get("value", ""))
+                        if power is not None:
+                            self._power_code = item["code"]
+                            self._dps_scale = 1.0  # _parse_phase_power returns watts
+                            break
+            if user_scale:
+                self._dps_scale = float(user_scale)
+
+        if self._power_code is None:
+            self._cloud = None
+            return
+
+        self._mode = "cloud"
+        self.available = True
+
+    def _read_power_local(self) -> Optional[float]:
+        """Read power from local LAN device.
+
+        Sends updatedps() to request a firmware DPS refresh, waits briefly,
+        then reads status(). Non-persistent connection ensures fresh data
+        (persistent sockets return stale cached values on these breakers).
+        Each poll cycle takes ~1-2s due to connection overhead.
+        """
+        try:
+            self._device.updatedps([int(self._power_dps)])
+        except Exception:
+            pass
+        time.sleep(0.5)
+        try:
+            status = self._device.status()
+            dps = status.get("dps", {})
+            raw = dps.get(self._power_dps)
+            if raw is not None and isinstance(raw, (int, float)):
+                return float(raw) / self._dps_scale
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _parse_phase_power(value: str) -> Optional[float]:
+        """Parse Tuya phase_a/b/c base64 struct: 2B voltage(0.1V) + 3B current(mA) + 3B power(W)."""
+        try:
+            data = base64.b64decode(value)
+            if len(data) < 8:
+                return None
+            power = int.from_bytes(data[5:8], "big")
+            return float(power)
+        except Exception:
+            return None
+
+    def _read_power_cloud(self) -> Optional[float]:
+        """Read power from Tuya Cloud API."""
+        try:
+            result = self._cloud.getstatus(self._cloud_device_id)
+            if not result or not result.get("success"):
+                return None
+            for item in result.get("result", []):
+                if item.get("code") == self._power_code:
+                    value = item.get("value")
+                    # Handle phase_a encoded format
+                    if self._power_code in self.PHASE_CODES:
+                        power = self._parse_phase_power(value)
+                        if power is not None:
+                            return power / self._dps_scale
+                        return None
+                    if isinstance(value, (int, float)):
+                        return float(value) / self._dps_scale
+        except Exception:
+            pass
+        return None
+
+    def _poll_loop(self):
+        """Background thread that polls plug power."""
+        read_fn = self._read_power_local if self._mode == "local" else self._read_power_cloud
+        while self._running:
+            power = read_fn()
+            if power is not None:
+                self._samples.append(power)
+            time.sleep(self.poll_interval)
+
+    def start(self):
+        """Start background power monitoring."""
+        if not self.available:
+            return
+        self._samples = []
+        self._running = True
+        self._start_time = time.perf_counter()
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> tuple:
+        """Stop monitoring and return (total_joules, avg_watts, sample_count)."""
+        self._running = False
+        self._stop_time = time.perf_counter()
+        if self._thread:
+            self._thread.join(timeout=5.0)
+
+        if not self._samples:
+            return 0.0, 0.0, 0
+
+        avg_watts = sum(self._samples) / len(self._samples)
+        # Use actual wall time (not sample count * interval) since
+        # each poll cycle takes ~1-2s and firmware only refreshes
+        # power readings every ~15-30s
+        total_time = self._stop_time - self._start_time
+        total_joules = avg_watts * total_time
+
+        return total_joules, avg_watts, len(self._samples)
+
+
 def run_with_rusage(command: List[str]) -> tuple:
     """Run command and return (exit_code, wall_time, cpu_time) using os.wait4 for accurate rusage."""
     wall_start = time.perf_counter()
@@ -462,18 +764,20 @@ def run_with_rusage(command: List[str]) -> tuple:
     return exit_code, wall_time, cpu_time
 
 
-def measure_energy(command: List[str], gpu_poll_ms: int = 100) -> EnergyResult:
+def measure_energy(command: List[str], gpu_poll_ms: int = 100, plug_poll_s: float = 10.0) -> EnergyResult:
     """Measure energy consumption of a command."""
     perf_reader = PerfEnergyReader()
     rapl_reader = RAPLReader()
     cpu_estimator = CPUPowerEstimator()
     gpu_monitor = GPUPowerMonitor(gpu_poll_ms)
+    plug_monitor = SmartPlugMonitor(plug_poll_s)
 
     cpu_energy = None
     cpu_time = 0.0
     method = "none"
 
-    # Start GPU monitoring
+    # Start monitoring
+    plug_monitor.start()
     gpu_monitor.start()
 
     if perf_reader.available:
@@ -502,11 +806,16 @@ def measure_energy(command: List[str], gpu_poll_ms: int = 100) -> EnergyResult:
         exit_code, wall_time, cpu_time = run_with_rusage(command)
         cpu_energy = cpu_estimator.estimate_energy(wall_time, cpu_time)
 
-    # Stop GPU monitoring
+    # Stop monitoring
     gpu_energy, gpu_avg_power = gpu_monitor.stop()
+    plug_energy, plug_avg_power, plug_samples = plug_monitor.stop()
     if not gpu_monitor.available:
         gpu_energy = None
         gpu_avg_power = None
+    if not plug_monitor.available:
+        plug_energy = None
+        plug_avg_power = None
+        plug_samples = None
 
     # Calculate totals and averages
     total_energy = None
@@ -534,7 +843,11 @@ def measure_energy(command: List[str], gpu_poll_ms: int = 100) -> EnergyResult:
         exit_code=exit_code,
         command=command,
         gpu_type=gpu_monitor.gpu_type,
-        is_apu=gpu_monitor.is_apu
+        is_apu=gpu_monitor.is_apu,
+        plug_energy_joules=plug_energy,
+        plug_avg_power_watts=plug_avg_power,
+        plug_mode=plug_monitor._mode if plug_monitor.available else None,
+        plug_samples=plug_samples,
     )
 
 
@@ -575,12 +888,25 @@ def format_human(result: EnergyResult) -> str:
             f"  TOTAL:      {result.total_energy_joules:>10.2f} J",
         ])
 
-    if result.cpu_energy_joules is None and result.gpu_energy_joules is None:
-        lines.append("Energy: (not available - no RAPL/perf access)")
+    if result.plug_energy_joules is not None:
+        lines.extend([
+            "",
+            "Wall Power (Smart Plug):",
+            f"  Energy:     {result.plug_energy_joules:>10.2f} J",
+        ])
+        if result.plug_avg_power_watts:
+            lines.append(f"  Power:      {result.plug_avg_power_watts:>10.2f} W (avg)")
+        if result.plug_samples:
+            lines.append(f"  Samples:    {result.plug_samples:>10d}")
+
+    if result.cpu_energy_joules is None and result.gpu_energy_joules is None and result.plug_energy_joules is None:
+        lines.append("Energy: (not available - no RAPL/perf access or smart plug)")
 
     method_info = result.measurement_method
     if result.gpu_type:
         method_info += f", gpu={result.gpu_type}"
+    if result.plug_mode:
+        method_info += f", plug={result.plug_mode}"
     lines.extend([
         "",
         f"Measurement method: {method_info}",
@@ -598,6 +924,8 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--gpu-poll-ms", type=int, default=100,
                         help="GPU polling interval in milliseconds (default: 100)")
+    parser.add_argument("--plug-poll-s", type=float, default=10.0,
+                        help="Smart plug polling interval in seconds (default: 10)")
     parser.add_argument("-o", "--output", type=str, help="Write output to file")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="Command to profile")
 
@@ -612,7 +940,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    result = measure_energy(command, args.gpu_poll_ms)
+    result = measure_energy(command, args.gpu_poll_ms, args.plug_poll_s)
 
     if args.json:
         output = json.dumps(asdict(result), indent=2)
