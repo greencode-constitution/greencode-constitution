@@ -15,7 +15,7 @@
 
 ### Measurement Methods
 
-The tool tries methods in order: **perf** (hardware counters) → **rapl_sysfs** → **estimated** (lower accuracy, TDP-based). The output shows which method was used. For accurate results, enable perf/RAPL access below.
+The tool tries CPU measurement methods in order: **perf** (hardware counters) → **rapl_sysfs** → **estimated** (lower accuracy, TDP-based). The output shows which was used as `cpu=<method>`. For accurate results, enable perf/RAPL access below.
 
 ### Enable Perf/RAPL Access
 
@@ -37,7 +37,7 @@ python3 -c "import json; b,a = [json.load(open(f))['total_energy_joules'] for f 
 rm /tmp/energy-XXXX-*.json
 ```
 
-**Note:** Always check the `measurement_method` field in the JSON output. **If `estimated` was used, warn the user** that results are approximations with significantly lower accuracy than hardware-based measurements. For reliable comparisons, enable perf/RAPL access and ensure both measurements use the same method.
+**Note:** Always check the `measurement_method` field in the JSON output. **If `estimated` was used (i.e. `cpu=estimated`), warn the user** that CPU energy results are approximations with significantly lower accuracy than hardware-based measurements. For reliable comparisons, enable perf/RAPL access and ensure both measurements use the same method.
 
 ### Wall Power (Smart Plug)
 

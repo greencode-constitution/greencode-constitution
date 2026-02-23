@@ -902,7 +902,7 @@ def format_human(result: EnergyResult) -> str:
     if result.cpu_energy_joules is None and result.gpu_energy_joules is None and result.plug_energy_joules is None:
         lines.append("Energy: (not available - no RAPL/perf access or smart plug)")
 
-    method_info = result.measurement_method
+    method_info = f"cpu={result.measurement_method}"
     if result.gpu_type:
         method_info += f", gpu={result.gpu_type}"
     if result.plug_mode:
