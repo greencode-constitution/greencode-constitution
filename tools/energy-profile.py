@@ -867,7 +867,7 @@ def format_human(result: EnergyResult) -> str:
     ]
 
     if result.cpu_energy_joules is not None:
-        energy_label = "Energy (estimated):" if result.measurement_method == "estimated" else "Energy:"
+        energy_label = "Energy:"
         lines.extend([
             energy_label,
             f"  CPU energy: {result.cpu_energy_joules:>10.2f} J",
@@ -903,6 +903,8 @@ def format_human(result: EnergyResult) -> str:
         lines.append("Energy: (not available - no RAPL/perf access or smart plug)")
 
     method_info = f"cpu={result.measurement_method}"
+    if result.measurement_method == "estimated":
+        method_info += f" (WARN)"
     if result.gpu_type:
         method_info += f", gpu={result.gpu_type}"
     if result.plug_mode:
