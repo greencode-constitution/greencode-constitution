@@ -485,10 +485,12 @@ class GPUPowerMonitor:
         return total_joules, avg_watts
 
 
-try:
-    import tinytuya
-except ImportError:
-    tinytuya = None
+# TODO: re-enable smart plug integration
+# try:
+#     import tinytuya
+# except ImportError:
+#     tinytuya = None
+tinytuya = None
 
 
 class SmartPlugMonitor:
