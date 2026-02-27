@@ -3,20 +3,19 @@
  * NVIDIA DGX Spark (GB10) SPBM Power Telemetry hwmon driver
  *
  * Exposes the System Power Budget Manager (SPBM) shared memory as
- * standard Linux hwmon sensors. The SPBM region is at physical address
- * 0x1C238000 (4KB), the second memory resource of the MTEL (NVDA8800)
- * ACPI device.
+ * standard Linux hwmon sensors. The SPBM region is the second memory
+ * resource of the MTEL (NVDA8800) ACPI device.
  *
  * The SPBM firmware (running on MediaTek SSPM) continuously updates
  * these registers with live power telemetry in milliwatts and
  * cumulative energy counters in millijoules.
  *
- * Since the NVDA8800 ACPI device is stuck in waiting_for_supplier
- * (no Linux driver for its dependencies), this module directly
- * ioremaps the known physical address.
+ * This driver binds as an acpi_driver to the NVDA8800 device on the
+ * ACPI bus. The device has no platform_device (missing _UID/_STA in
+ * DSDT), so a platform_driver cannot be used.
  *
  * Usage:
- *   sudo insmod spbm_hwmon.ko
+ *   sudo modprobe spbm_hwmon   (or auto-loaded via DKMS + udev)
  *   sensors spbm-*
  *   cat /sys/class/hwmon/hwmonN/power1_input   # microwatts
  *
@@ -25,19 +24,16 @@
  */
 
 #include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/platform_device.h>
 #include <linux/hwmon.h>
 #include <linux/io.h>
+#include <linux/acpi.h>
+#include <linux/list.h>
 
 #define DRIVER_NAME	"spbm"
-
-/* SPBM physical address (MTEL region 2) */
-static unsigned long spbm_phys = 0x1C238000;
-module_param(spbm_phys, ulong, 0444);
-MODULE_PARM_DESC(spbm_phys, "SPBM physical address (default: 0x1C238000)");
-
 #define SPBM_SIZE	0x1000
+
+/* SPBM _CRS memory resource index (0-based) */
+#define SPBM_RES_IDX	1
 
 /*
  * Register offsets. Firmware writes milliwatts for power,
@@ -124,10 +120,7 @@ static const struct spbm_chan nrg_chans[] = {
 
 struct spbm_priv {
 	void __iomem *base;
-	struct platform_device *pdev;
 };
-
-static struct spbm_priv *spbm_inst;
 
 /* hwmon callbacks */
 
@@ -151,12 +144,12 @@ static int spbm_read(struct device *dev, enum hwmon_sensor_types type,
 
 	if (type == hwmon_power && attr == hwmon_power_input && ch < N_PWR) {
 		raw = ioread32(p->base + pwr_chans[ch].offset);
-		*val = (long)raw * 1000; /* mW → uW */
+		*val = (long)raw * 1000; /* mW -> uW */
 		return 0;
 	}
 	if (type == hwmon_energy && attr == hwmon_energy_input && ch < N_NRG) {
 		raw = ioread32(p->base + nrg_chans[ch].offset);
-		*val = (long)raw * 1000; /* mJ → uJ */
+		*val = (long)raw * 1000; /* mJ -> uJ */
 		return 0;
 	}
 	return -EOPNOTSUPP;
@@ -213,78 +206,86 @@ static const struct hwmon_chip_info spbm_chip = {
 	.info = spbm_info,
 };
 
-/* Module init/exit */
+/* ACPI driver */
 
-static int __init spbm_init(void)
+static int spbm_add(struct acpi_device *adev)
 {
+	struct device *dev = &adev->dev;
+	struct list_head res_list;
+	struct resource_entry *re;
+	resource_size_t phys = 0;
 	struct spbm_priv *p;
 	struct device *hwdev;
+	int idx = 0, ret;
 	u32 test;
 
-	p = kzalloc(sizeof(*p), GFP_KERNEL);
+	p = devm_kzalloc(dev, sizeof(*p), GFP_KERNEL);
 	if (!p)
 		return -ENOMEM;
 
-	p->pdev = platform_device_register_simple(DRIVER_NAME, -1, NULL, 0);
-	if (IS_ERR(p->pdev)) {
-		kfree(p);
-		return PTR_ERR(p->pdev);
+	/* Find SPBM memory resource from _CRS (resource index SPBM_RES_IDX) */
+	INIT_LIST_HEAD(&res_list);
+	ret = acpi_dev_get_resources(adev, &res_list, NULL, NULL);
+	if (ret < 0)
+		return ret;
+
+	list_for_each_entry(re, &res_list, node) {
+		if (resource_type(re->res) == IORESOURCE_MEM) {
+			if (idx == SPBM_RES_IDX) {
+				phys = re->res->start;
+				break;
+			}
+			idx++;
+		}
+	}
+	acpi_dev_free_resource_list(&res_list);
+
+	if (!phys) {
+		dev_err(dev, "SPBM memory resource not found in _CRS\n");
+		return -ENODEV;
 	}
 
-	p->base = ioremap(spbm_phys, SPBM_SIZE);
-	if (!p->base) {
-		pr_err("spbm: ioremap 0x%lx failed\n", spbm_phys);
-		platform_device_unregister(p->pdev);
-		kfree(p);
+	p->base = devm_ioremap(dev, phys, SPBM_SIZE);
+	if (!p->base)
 		return -ENOMEM;
-	}
 
 	/* Sanity check */
 	test = ioread32(p->base + TE_SYS_TOTAL);
 	if (test == 0 || test == 0xFFFFFFFF)
-		pr_warn("spbm: SYS_TOTAL=%u — telemetry may be inactive\n",
-			test);
+		dev_warn(dev, "SYS_TOTAL=%u, telemetry may be inactive\n",
+			 test);
 	else
-		pr_info("spbm: live — SYS=%u mW, SOC=%u mW, CPU_P=%u mW, "
-			"GPU=%u mW\n", test,
-			ioread32(p->base + TE_SOC_PKG),
-			ioread32(p->base + TE_CPU_P),
-			ioread32(p->base + TE_GPU_OUT));
+		dev_info(dev, "live at 0x%llx: SYS=%u mW, SOC=%u mW, "
+			 "CPU_P=%u mW, GPU=%u mW\n", (u64)phys, test,
+			 ioread32(p->base + TE_SOC_PKG),
+			 ioread32(p->base + TE_CPU_P),
+			 ioread32(p->base + TE_GPU_OUT));
 
-	platform_set_drvdata(p->pdev, p);
-
-	hwdev = devm_hwmon_device_register_with_info(&p->pdev->dev,
-						     DRIVER_NAME, p,
+	hwdev = devm_hwmon_device_register_with_info(dev, DRIVER_NAME, p,
 						     &spbm_chip, NULL);
-	if (IS_ERR(hwdev)) {
-		pr_err("spbm: hwmon registration failed: %ld\n",
-		       PTR_ERR(hwdev));
-		iounmap(p->base);
-		platform_device_unregister(p->pdev);
-		kfree(p);
+	if (IS_ERR(hwdev))
 		return PTR_ERR(hwdev);
-	}
 
-	pr_info("spbm: registered %zu power + %zu energy hwmon channels\n",
-		N_PWR, N_NRG);
+	dev_info(dev, "registered %zu power + %zu energy hwmon channels\n",
+		 N_PWR, N_NRG);
 
-	spbm_inst = p;
 	return 0;
 }
 
-static void __exit spbm_exit(void)
-{
-	if (spbm_inst) {
-		iounmap(spbm_inst->base);
-		platform_device_unregister(spbm_inst->pdev);
-		kfree(spbm_inst);
-		spbm_inst = NULL;
-	}
-	pr_info("spbm: unloaded\n");
-}
+static const struct acpi_device_id spbm_acpi_ids[] = {
+	{ "NVDA8800", 0 },
+	{ }
+};
+MODULE_DEVICE_TABLE(acpi, spbm_acpi_ids);
 
-module_init(spbm_init);
-module_exit(spbm_exit);
+static struct acpi_driver spbm_driver = {
+	.name = DRIVER_NAME,
+	.ids = spbm_acpi_ids,
+	.ops = {
+		.add = spbm_add,
+	},
+};
+module_acpi_driver(spbm_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("DGX Spark Power Telemetry");
