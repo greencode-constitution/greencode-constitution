@@ -8,8 +8,9 @@ set -euo pipefail
 OUTPUT="/tmp/ffmpeg_bench_output.mp4"
 
 # Detect NVENC support in the built binary
+ENCODERS=$(./ffmpeg -hide_banner -encoders 2>/dev/null || true)
 HAS_NVENC=0
-if ./ffmpeg -hide_banner -encoders 2>/dev/null | grep -q h264_nvenc; then
+if echo "$ENCODERS" | grep -q h264_nvenc; then
     HAS_NVENC=1
 fi
 
