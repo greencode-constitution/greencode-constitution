@@ -42,13 +42,15 @@ curl -sfL $BASE_URL/benches/scenarios/test.sh > /tmp/scenarios-test.sh && chmod 
 
 ## Workflow
 
-1. List scenarios: `./list.sh`
-2. View reference code: `./code.sh SCENARIO_ID`
+After prepare, `run.py` is cached at `/tmp/scenarios-run.py`. Use these wrappers:
+
+1. List scenarios: `bash <(curl -sfL $BASE_URL/benches/scenarios/list.sh)`
+2. View reference code: `bash <(curl -sfL $BASE_URL/benches/scenarios/code.sh) SCENARIO_ID`
 3. Edit source file in `scenarios-workspace/SCENARIO_ID/`
-4. Rebuild: `./build.sh SCENARIO_ID`
-5. Verify: `./test.sh SCENARIO_ID`
+4. Rebuild: `bash <(curl -sfL $BASE_URL/benches/scenarios/build.sh) SCENARIO_ID`
+5. Verify: `bash <(curl -sfL $BASE_URL/benches/scenarios/test.sh) SCENARIO_ID`
 6. Repeat for other scenarios
-7. Final energy measurement: wrap `./test.sh` with the profiler
+7. Final energy measurement: wrap test.sh with the profiler (see step 3 above)
 
 ## Source file locations
 

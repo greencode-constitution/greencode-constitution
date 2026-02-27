@@ -7,8 +7,19 @@ set -euo pipefail
 # Usage:
 #   ./code.sh leetcode/cpp/n-queens_english
 
+GREENCODE_BASE_URL="${GREENCODE_BASE_URL:-https://greencode-constitution.org}"
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-SCENARIOS_DIR="${SCENARIOS_DIR:-$(cd "$SCRIPT_DIR/../../.." && pwd)/green-languages-scenarios}"
+SCENARIOS_DIR="${SCENARIOS_DIR:-.}"
+
+# Find run.py: local > cached > download
+if [ -f "$SCRIPT_DIR/run.py" ]; then
+    RUN_PY="$SCRIPT_DIR/run.py"
+elif [ -f /tmp/scenarios-run.py ]; then
+    RUN_PY="/tmp/scenarios-run.py"
+else
+    RUN_PY="/tmp/scenarios-run.py"
+    curl -sfL "$GREENCODE_BASE_URL/benches/scenarios/run.py" -o "$RUN_PY"
+fi
 
 if [ -z "${1:-}" ]; then
     echo "Usage: $0 SCENARIO_ID" >&2
@@ -16,4 +27,4 @@ if [ -z "${1:-}" ]; then
     exit 1
 fi
 
-python3 "$SCRIPT_DIR/run.py" --dir "$SCENARIOS_DIR" code "$1"
+python3 "$RUN_PY" --dir "$SCENARIOS_DIR" code "$1"
