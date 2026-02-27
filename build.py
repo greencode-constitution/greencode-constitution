@@ -276,6 +276,12 @@ class DynamicHandler(http.server.SimpleHTTPRequestHandler):
                 # Replace $BASE_URL in bench docs
                 if self.path.endswith(".md"):
                     content = content.replace("$BASE_URL", BASE_URL)
+                # Rewrite default GREENCODE_BASE_URL in shell scripts
+                if self.path.endswith(".sh"):
+                    content = content.replace(
+                        'GREENCODE_BASE_URL="${GREENCODE_BASE_URL:-https://greencode-constitution.org}"',
+                        f'GREENCODE_BASE_URL="${{GREENCODE_BASE_URL:-{BASE_URL}}}"'
+                    )
                 content = content.encode("utf-8")
                 self.send_response(200)
                 if self.path.endswith(".sh"):
