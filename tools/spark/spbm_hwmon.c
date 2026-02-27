@@ -20,7 +20,7 @@
  *   cat /sys/class/hwmon/hwmonN/power1_input   # microwatts
  *
  * Discovered by reverse-engineering the DSDT _DSM for NVDA8800.
- * No upstream driver exists as of kernel 6.14.
+ * No upstream driver exists as of kernel 7.0.
  */
 
 #include <linux/module.h>
