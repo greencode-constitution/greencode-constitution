@@ -63,6 +63,19 @@ Each scenario at `scenarios-workspace/SCENARIO_ID/`:
 | Ruby | `program.rb` |
 | Rust | `src/main.rs` |
 
+## Language Skills
+
+Fetch the relevant optimization guides before working on each language:
+
+| Language | Skill URL |
+|----------|-----------|
+| C, C++ | `$BASE_URL/docs/code/c-cpp.md` |
+| Java | `$BASE_URL/docs/code/java.md` |
+| Python | `$BASE_URL/docs/code/python.md` |
+| Ruby | `$BASE_URL/docs/code/ruby.md` |
+
+Rust has no dedicated skill — apply constitutional principles directly.
+
 ## Benchmark Details
 
 - **LeetCode:** n-queens, group-anagrams, word-ladder-2 (C, C++, Java, Python, Ruby, Rust)
