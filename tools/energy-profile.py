@@ -51,6 +51,7 @@ Example:
 import argparse
 import base64
 import json
+import math
 import os
 import re
 import shutil
@@ -193,24 +194,57 @@ class CPUPowerEstimator:
     """Estimate CPU power consumption using frequency and utilization when hardware measurement unavailable."""
 
     # TDP estimates for common CPU types (watts)
+    # For dgx_spark, split into uncore (constant) + per-core dynamic components
+    # since the Grace SoC has significant uncore power (memory controllers, interconnect)
     TDP_ESTIMATES = {
-        "arm_high_perf": 15.0,  # Cortex-X series, Apple M-series performance cores
+        "dgx_spark": None,      # Computed from UNCORE + per-core (see below)
+        "arm_high_perf": 15.0,   # Cortex-X series, Apple M-series performance cores
         "arm_efficiency": 5.0,   # Cortex-A series efficiency cores
         "x86_desktop": 65.0,     # Typical desktop CPU
         "x86_laptop": 15.0,      # Typical laptop CPU
         "default": 25.0,         # Conservative default
     }
 
+    # DGX Spark CPU die-level power model (calibrated on NVIDIA Grace / Neoverse V2)
+    # Reports component-level power comparable to nvidia-smi GPU readings.
+    # Exponential saturation: turbo boost gives high per-core power at low
+    # utilization, saturating as thermal budget is shared across more cores.
+    #   cpu_die = IDLE + DYNAMIC * (1 - exp(-RAMP_K * util_ratio))
+    # Calibrated against smart plug: idle 40W, 1c 52W, 10c 119W, 20c 135W
+    DGX_SPARK_DIE_IDLE_W = 17.0
+    DGX_SPARK_DIE_DYNAMIC_W = 63.0
+    DGX_SPARK_RAMP_K = 3.1
+
     def __init__(self):
+        self.cpu_count = os.cpu_count() or 1
         self.cpu_type = self._detect_cpu_type()
         self.base_tdp = self._get_base_tdp()
-        self.cpu_count = os.cpu_count() or 1
 
     def _detect_cpu_type(self) -> str:
         """Detect CPU architecture and type."""
         try:
             with open("/proc/cpuinfo") as f:
                 cpuinfo = f.read().lower()
+
+                # Parse ARM implementer/part fields for server SoC detection
+                implementers = set()
+                parts = set()
+                for line in cpuinfo.split("\n"):
+                    if "cpu implementer" in line:
+                        implementers.add(line.split(":")[-1].strip())
+                    elif "cpu part" in line:
+                        parts.add(line.split(":")[-1].strip())
+
+                # NVIDIA DGX Spark: ARM (0x41) Neoverse V2/N2 cores
+                dgx_spark_parts = {
+                    "0xd49",  # Neoverse N2
+                    "0xd4f",  # Neoverse V2
+                    "0xd85",  # Neoverse N2 (Grace variant)
+                    "0xd87",  # Neoverse V2 (Grace variant)
+                }
+                if "0x41" in implementers and parts & dgx_spark_parts:
+                    return "dgx_spark"
+
                 if "cortex-x" in cpuinfo or "apple" in cpuinfo:
                     return "arm_high_perf"
                 elif "cortex-a" in cpuinfo or "aarch64" in cpuinfo or "arm" in cpuinfo:
@@ -224,6 +258,8 @@ class CPUPowerEstimator:
 
     def _get_base_tdp(self) -> float:
         """Get base TDP estimate for this CPU type."""
+        if self.cpu_type == "dgx_spark":
+            return self.DGX_SPARK_DIE_IDLE_W + self.DGX_SPARK_DIE_DYNAMIC_W
         return self.TDP_ESTIMATES.get(self.cpu_type, self.TDP_ESTIMATES["default"])
 
     def _read_cpu_frequencies(self) -> List[float]:
@@ -274,27 +310,33 @@ class CPUPowerEstimator:
         utilization = min(cpu_time / wall_time, self.cpu_count)
         util_ratio = utilization / self.cpu_count
 
-        if not cur_freqs or not max_freqs:
+        # Calculate frequency scaling factor if available
+        freq_scale = 1.0
+        if cur_freqs and max_freqs:
+            freq_ratios = [cur / max_val for cur, max_val in zip(cur_freqs, max_freqs)]
+            avg_freq_ratio = sum(freq_ratios) / len(freq_ratios)
+            # Power scales as f³ for dynamic component (P ∝ V² × f, V ∝ f)
+            freq_scale = avg_freq_ratio ** 3
+
+        if self.cpu_type == "dgx_spark":
+            # Grace SoC die-level power (comparable to nvidia-smi GPU readings)
+            # Exponential saturation accounts for turbo boost at low core counts
+            # No freq_scale: calibration already captures DVFS behavior
+            idle_power = self.DGX_SPARK_DIE_IDLE_W
+            dynamic_power = self.DGX_SPARK_DIE_DYNAMIC_W * (
+                1 - math.exp(-self.DGX_SPARK_RAMP_K * util_ratio)
+            )
+            avg_power = idle_power + dynamic_power
+        elif cur_freqs and max_freqs:
+            # Modern CPUs with good power gating: minimal idle, most power is dynamic
+            idle_power = 0.03 * self.base_tdp
+            active_power = 0.97 * self.base_tdp * freq_scale * util_ratio
+            avg_power = idle_power + active_power
+        else:
             # Fallback: use CPU utilization only
-            # Idle power is ~3% TDP, active power scales linearly with utilization
             idle_power = 0.03 * self.base_tdp
             active_power = 0.97 * self.base_tdp * util_ratio
             avg_power = idle_power + active_power
-            return avg_power * wall_time
-
-        # Calculate frequency scaling factor (average across cores)
-        freq_ratios = [cur / max_val for cur, max_val in zip(cur_freqs, max_freqs)]
-        avg_freq_ratio = sum(freq_ratios) / len(freq_ratios) if freq_ratios else 1.0
-
-        # Power scales as f³ for dynamic component (P ∝ V² × f, V ∝ f)
-        freq_scale = avg_freq_ratio ** 3
-
-        # Modern CPUs with good power gating: minimal idle, most power is dynamic
-        # Idle: ~3% of TDP (package + IO)
-        # Active: scales with frequency³ and utilization
-        idle_power = 0.03 * self.base_tdp
-        active_power = 0.97 * self.base_tdp * freq_scale * util_ratio
-        avg_power = idle_power + active_power
 
         energy_joules = avg_power * wall_time
         return energy_joules
@@ -815,9 +857,26 @@ def measure_energy(command: List[str], gpu_poll_ms: int = 100, plug_poll_s: floa
         gpu_energy = None
         gpu_avg_power = None
     if not plug_monitor.available:
-        plug_energy = None
-        plug_avg_power = None
-        plug_samples = None
+        # Estimate wall power from component-level readings (DGX Spark)
+        # wall = BOARD + SCALE * (cpu_die + gpu_die)
+        # Calibrated: RMSE ~1W across idle, 1c, 10c, 20c, GPU, CPU+GPU
+        if cpu_estimator.cpu_type == "dgx_spark" and cpu_energy is not None:
+            DGX_SPARK_BOARD_W = 5.1
+            DGX_SPARK_POWER_SCALE = 1.58
+            component_power = (cpu_energy / wall_time if wall_time > 0 else 0)
+            if gpu_avg_power is not None:
+                component_power += gpu_avg_power
+            plug_avg_power = DGX_SPARK_BOARD_W + DGX_SPARK_POWER_SCALE * component_power
+            plug_energy = plug_avg_power * wall_time
+            plug_samples = None
+            plug_mode = "estimated"
+        else:
+            plug_energy = None
+            plug_avg_power = None
+            plug_samples = None
+            plug_mode = None
+    else:
+        plug_mode = plug_monitor._mode
 
     # Calculate totals and averages
     total_energy = None
@@ -848,7 +907,7 @@ def measure_energy(command: List[str], gpu_poll_ms: int = 100, plug_poll_s: floa
         is_apu=gpu_monitor.is_apu,
         plug_energy_joules=plug_energy,
         plug_avg_power_watts=plug_avg_power,
-        plug_mode=plug_monitor._mode if plug_monitor.available else None,
+        plug_mode=plug_mode,
         plug_samples=plug_samples,
     )
 
@@ -911,6 +970,8 @@ def format_human(result: EnergyResult) -> str:
         method_info += f", gpu={result.gpu_type}"
     if result.plug_mode:
         method_info += f", plug={result.plug_mode}"
+        if result.plug_mode == "estimated":
+            method_info += " (WARN)"
     lines.extend([
         "",
         f"Measurement method: {method_info}",
