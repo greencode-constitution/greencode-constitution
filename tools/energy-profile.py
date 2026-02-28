@@ -342,6 +342,109 @@ class CPUPowerEstimator:
         return energy_joules
 
 
+class SPBMReader:
+    """Read power/energy from SPBM hwmon on DGX Spark (NVIDIA GB10).
+
+    Uses hardware energy accumulators for CPU and GPU energy,
+    and polls sys_total power for system-level measurement.
+    Provides accurate hardware telemetry without nvidia-smi or estimation.
+    """
+
+    def __init__(self, poll_interval_ms: int = 100):
+        self.poll_interval = poll_interval_ms / 1000.0
+        self._power_files: dict = {}
+        self._energy_files: dict = {}
+        self._samples: List[float] = []
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self.hwmon_path = self._find_hwmon()
+        self.available = self.hwmon_path is not None
+        if self.available:
+            self._build_channel_map()
+
+    @staticmethod
+    def _find_hwmon() -> Optional[Path]:
+        """Find spbm hwmon device in sysfs."""
+        hwmon_base = Path("/sys/class/hwmon")
+        if not hwmon_base.exists():
+            return None
+        for entry in hwmon_base.iterdir():
+            try:
+                if (entry / "name").read_text().strip() == "spbm":
+                    return entry
+            except (IOError, OSError):
+                continue
+        return None
+
+    def _build_channel_map(self):
+        """Build label -> sysfs input file mappings."""
+        for f in self.hwmon_path.iterdir():
+            name = f.name
+            if not name.endswith("_label"):
+                continue
+            try:
+                label = f.read_text().strip()
+            except (IOError, OSError):
+                continue
+            input_path = self.hwmon_path / name.replace("_label", "_input")
+            if not input_path.exists():
+                continue
+            if name.startswith("power"):
+                self._power_files[label] = input_path
+            elif name.startswith("energy"):
+                self._energy_files[label] = input_path
+
+    def read_energy_uj(self, *labels: str) -> Optional[int]:
+        """Read sum of energy accumulators in microjoules."""
+        total = 0
+        for label in labels:
+            path = self._energy_files.get(label)
+            if path is None:
+                return None
+            try:
+                total += int(path.read_text().strip())
+            except (IOError, ValueError):
+                return None
+        return total
+
+    def read_power_uw(self, label: str) -> Optional[int]:
+        """Read instantaneous power in microwatts."""
+        path = self._power_files.get(label)
+        if path is None:
+            return None
+        try:
+            return int(path.read_text().strip())
+        except (IOError, ValueError):
+            return None
+
+    def _poll_loop(self):
+        """Background thread polling sys_total power."""
+        while self._running:
+            val = self.read_power_uw("sys_total")
+            if val is not None:
+                self._samples.append(val / 1_000_000)  # uW -> W
+            time.sleep(self.poll_interval)
+
+    def start(self):
+        """Start polling sys_total power for wall power measurement."""
+        if not self.available:
+            return
+        self._samples = []
+        self._running = True
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> tuple:
+        """Stop polling and return (avg_watts, sample_count)."""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=1.0)
+        if not self._samples:
+            return 0.0, 0
+        avg = sum(self._samples) / len(self._samples)
+        return avg, len(self._samples)
+
+
 class GPUPowerMonitor:
     """Monitor GPU power consumption via nvidia-smi, rocm-smi, or sysfs."""
 
@@ -810,6 +913,94 @@ def run_with_rusage(command: List[str]) -> tuple:
 
 def measure_energy(command: List[str], gpu_poll_ms: int = 100, plug_poll_s: float = 10.0) -> EnergyResult:
     """Measure energy consumption of a command."""
+    spbm = SPBMReader(gpu_poll_ms)
+
+    if spbm.available:
+        return _measure_spbm(spbm, command, plug_poll_s)
+    return _measure_generic(command, gpu_poll_ms, plug_poll_s)
+
+
+def _measure_spbm(spbm: SPBMReader, command: List[str], plug_poll_s: float) -> EnergyResult:
+    """Measure energy using SPBM hardware accumulators (DGX Spark)."""
+    plug_monitor = SmartPlugMonitor(plug_poll_s)
+
+    # Start monitors
+    plug_monitor.start()
+    spbm.start()  # polls sys_total for wall power
+
+    # Read energy accumulators before command
+    cpu_e_start = spbm.read_energy_uj("cpu_p", "cpu_e")
+    gpu_e_start = spbm.read_energy_uj("gpc", "gpm")
+
+    exit_code, wall_time, cpu_time = run_with_rusage(command)
+
+    # Read energy accumulators after command
+    cpu_e_end = spbm.read_energy_uj("cpu_p", "cpu_e")
+    gpu_e_end = spbm.read_energy_uj("gpc", "gpm")
+
+    # Stop monitors
+    sys_avg_power, sys_samples = spbm.stop()
+    plug_e, plug_p, plug_n = plug_monitor.stop()
+
+    # Energy deltas (uJ -> J)
+    cpu_energy = None
+    gpu_energy = None
+    if cpu_e_start is not None and cpu_e_end is not None and cpu_e_end >= cpu_e_start:
+        cpu_energy = (cpu_e_end - cpu_e_start) / 1_000_000
+    if gpu_e_start is not None and gpu_e_end is not None and gpu_e_end >= gpu_e_start:
+        gpu_energy = (gpu_e_end - gpu_e_start) / 1_000_000
+
+    # Wall power: prefer real smart plug, fall back to SPBM sys_total
+    if plug_monitor.available:
+        plug_energy = plug_e
+        plug_avg_power = plug_p
+        plug_samples = plug_n
+        plug_mode = plug_monitor._mode
+    elif sys_samples > 0:
+        plug_avg_power = sys_avg_power
+        plug_energy = plug_avg_power * wall_time
+        plug_samples = sys_samples
+        plug_mode = "spbm"
+    else:
+        plug_energy = None
+        plug_avg_power = None
+        plug_samples = None
+        plug_mode = None
+
+    # Calculate totals and averages
+    total_energy = None
+    cpu_avg_power = None
+    gpu_avg_power = None
+
+    if cpu_energy is not None:
+        cpu_avg_power = cpu_energy / wall_time if wall_time > 0 else None
+        total_energy = cpu_energy
+    if gpu_energy is not None:
+        gpu_avg_power = gpu_energy / wall_time if wall_time > 0 else None
+        total_energy = (total_energy or 0) + gpu_energy
+
+    return EnergyResult(
+        wall_time_seconds=wall_time,
+        cpu_time_seconds=cpu_time,
+        cpu_energy_joules=cpu_energy,
+        gpu_energy_joules=gpu_energy,
+        total_energy_joules=total_energy,
+        cpu_avg_power_watts=cpu_avg_power,
+        gpu_avg_power_watts=gpu_avg_power,
+        measurement_method="spbm",
+        exit_code=exit_code,
+        command=command,
+        gpu_type="nvidia",
+        is_apu=False,
+        plug_energy_joules=plug_energy,
+        plug_avg_power_watts=plug_avg_power,
+        plug_mode=plug_mode,
+        plug_samples=plug_samples,
+    )
+
+
+def _measure_generic(command: List[str], gpu_poll_ms: int, plug_poll_s: float) -> EnergyResult:
+    """Measure energy using RAPL/perf/estimation + nvidia-smi polling (non-SPBM systems)."""
     perf_reader = PerfEnergyReader()
     rapl_reader = RAPLReader()
     cpu_estimator = CPUPowerEstimator()
@@ -950,9 +1141,17 @@ def format_human(result: EnergyResult) -> str:
         ])
 
     if result.plug_energy_joules is not None:
+        if result.plug_mode in ("local", "cloud"):
+            wall_label = "Wall Power (Smart Plug):"
+        elif result.plug_mode == "spbm":
+            wall_label = "System Power (SPBM):"
+        elif result.plug_mode == "estimated":
+            wall_label = "Wall Power (Estimated):"
+        else:
+            wall_label = "Wall Power:"
         lines.extend([
             "",
-            "Wall Power (Smart Plug):",
+            wall_label,
             f"  Energy:     {result.plug_energy_joules:>10.2f} J",
         ])
         if result.plug_avg_power_watts:
@@ -963,15 +1162,18 @@ def format_human(result: EnergyResult) -> str:
     if result.cpu_energy_joules is None and result.gpu_energy_joules is None and result.plug_energy_joules is None:
         lines.append("Energy: (not available - no RAPL/perf access or smart plug)")
 
-    method_info = f"cpu={result.measurement_method}"
-    if result.measurement_method == "estimated":
-        method_info += f" (WARN)"
-    if result.gpu_type:
-        method_info += f", gpu={result.gpu_type}"
-    if result.plug_mode:
-        method_info += f", plug={result.plug_mode}"
-        if result.plug_mode == "estimated":
+    if result.measurement_method == "spbm":
+        method_info = "spbm (hardware accumulators)"
+    else:
+        method_info = f"cpu={result.measurement_method}"
+        if result.measurement_method == "estimated":
             method_info += " (WARN)"
+        if result.gpu_type:
+            method_info += f", gpu={result.gpu_type}"
+        if result.plug_mode:
+            method_info += f", plug={result.plug_mode}"
+            if result.plug_mode == "estimated":
+                method_info += " (WARN)"
     lines.extend([
         "",
         f"Measurement method: {method_info}",

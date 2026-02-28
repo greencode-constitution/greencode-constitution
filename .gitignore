@@ -5,3 +5,4 @@
 /detect.sh
 
 venv
+*.pyc
