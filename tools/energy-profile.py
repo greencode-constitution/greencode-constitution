@@ -1144,7 +1144,7 @@ def format_human(result: EnergyResult) -> str:
         if result.plug_mode in ("local", "cloud"):
             wall_label = "Wall Power (Smart Plug):"
         elif result.plug_mode == "spbm":
-            wall_label = "System Power (SPBM):"
+            wall_label = "System Power:"
         elif result.plug_mode == "estimated":
             wall_label = "Wall Power (Estimated):"
         else:
