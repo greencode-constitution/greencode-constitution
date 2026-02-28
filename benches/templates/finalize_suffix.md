@@ -1,0 +1,1 @@
+In the end, do a final benchmark on baseline. Afterwards, add the code per feature, benchmark it, and commit it with information about what the commit does plus how much more efficiency it adds. Finally, add an empty commit with the end-to-end improvement, which includes the the git hash of ../greencode-constitution that was used for the optimizations.
