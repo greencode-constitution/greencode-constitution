@@ -12,9 +12,14 @@ Options:
     -o, --output    Write results to file instead of stdout
 
 Requirements:
-    - Linux with RAPL support (Intel CPUs) or perf access
-    - nvidia-smi for GPU measurements (optional)
+    - Linux with RAPL support (Intel/AMD CPUs), perf access, or SPBM driver
+    - nvidia-smi for GPU measurements (optional, not needed on DGX Spark)
     - tinytuya for SmartLife/Tuya plug wall power measurement (optional)
+
+DGX Spark (NVIDIA GB10):
+    Install the SPBM hwmon driver from https://github.com/antheas/spbm-hwmon
+    for hardware energy accumulators (CPU + GPU). No nvidia-smi or RAPL needed.
+    The driver exposes sensors via standard hwmon sysfs and is auto-detected.
 
 SmartLife/Tuya Plug (wall power measurement):
     Set these environment variables in your bashrc to enable.
@@ -930,13 +935,13 @@ def _measure_spbm(spbm: SPBMReader, command: List[str], plug_poll_s: float) -> E
 
     # Read energy accumulators before command
     cpu_e_start = spbm.read_energy_uj("cpu_p", "cpu_e")
-    gpu_e_start = spbm.read_energy_uj("gpc", "gpm")
+    gpu_e_start = spbm.read_energy_uj("gpu")
 
     exit_code, wall_time, cpu_time = run_with_rusage(command)
 
     # Read energy accumulators after command
     cpu_e_end = spbm.read_energy_uj("cpu_p", "cpu_e")
-    gpu_e_end = spbm.read_energy_uj("gpc", "gpm")
+    gpu_e_end = spbm.read_energy_uj("gpu")
 
     # Stop monitors
     sys_avg_power, sys_samples = spbm.stop()
