@@ -46,11 +46,6 @@ Where `{fn}` is the filename for the benchmark script: `test-simple.sh` for one 
 - Input: 488 tokens @ X.X t/s (prompt processing)
 - Output: 512 tokens @ X.X t/s (text generation)
 
-**Energy consumption:**
-- CPU: X.X joules (RAPL/perf)
-- GPU: X.X joules (nvidia-smi/rocm-smi)
-- Wall time: X.Xs
-
 ## Workflow
 
 1. Run baseline benchmark to measure initial performance
@@ -74,3 +69,7 @@ Where `{fn}` is the filename for the benchmark script: `test-simple.sh` for one 
 - **Model:** Qwen3-8B-Q4_K_M (4.68 GiB quantized)
 - **Backend:** CUDA with 99 GPU layers
 - **Consistency:** Single run, deterministic workload
+
+## Warning: Do not use DVFS and do not modify clocks!
+
+With DVFS/clock mods, it is possible to get a 40% energy reduction. It is already known. DO NOT ATTEMPT.
