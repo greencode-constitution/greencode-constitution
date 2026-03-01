@@ -797,13 +797,13 @@ cp skill.md .claude/skill-greencode.md
   <div class="container">
     <p class="section-label">Results</p>
     <h2 class="section-title">Measured energy reductions</h2>
-    <p class="section-subtitle">Evaluated on open-source projects. All measurements via SPBM hardware energy accumulators on DGX Spark (GB10), except llama.cpp kernel-only (nvidia-smi).</p>
+    <p class="section-subtitle">Evaluated on open-source projects. All measurements via SPBM hardware energy accumulators on DGX Spark (GB10), llama.cpp measures GPU-only energy.</p>
 
     <div class="results-grid">
       <div class="result-card">
         <span style="font-size:1.5rem">&#x1F9E0;</span>
-        <span class="pct">&darr; 5%</span>
-        <span class="label">llama.cpp<br><small style="color:var(--muted);font-size:.7rem">GPU &middot; CUDA kernel fusions</small></span>
+        <span class="pct">&darr; 6%</span>
+        <span class="label">llama.cpp<br><small style="color:var(--muted);font-size:.7rem">GPU &middot; CUDA kernel optimizations</small></span>
       </div>
       <div class="result-card">
         <span style="font-size:1.5rem">&#x1F3AC;</span>

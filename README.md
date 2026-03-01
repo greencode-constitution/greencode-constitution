@@ -62,7 +62,7 @@ improvement with measured energy results.
 
 | Benchmark | Reduction | Method |
 |-----------|-----------|--------|
-| llama.cpp | 5% GPU | CUDA kernel fusions (nvidia-smi) |
+| llama.cpp | 6% GPU | CUDA kernel optimizations (SPBM) |
 | FFmpeg | 13.5% total | 4K GPU transcoding (SPBM) |
 | Pasteur | 32.5% total | Data synthesis pipeline (SPBM) |
 | Scenarios | 21% total | 45 problems, 6 languages (SPBM) |
