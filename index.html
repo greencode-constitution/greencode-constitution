@@ -267,11 +267,54 @@ p code,.step code,li code{
   border-radius:10px;
   padding:1rem 1.5rem;
   text-align:center;
-  min-width:160px;
+  min-width:140px;
 }
 .flow-item strong{display:block;margin-bottom:.25rem;font-size:.95rem}
 .flow-item span{color:var(--muted);font-size:.82rem}
 .flow-arrow{color:var(--green);font-size:1.5rem;flex-shrink:0}
+
+/* Architecture phases */
+.arch-phases{display:flex;flex-direction:column;gap:2.5rem;margin-top:2rem}
+.arch-phase{position:relative}
+.phase-label{
+  font-size:.72rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  color:var(--green);
+  margin-bottom:.75rem;
+}
+.phase-connector{
+  display:flex;
+  justify-content:center;
+  color:var(--green);
+  font-size:1.5rem;
+  margin-top:-.5rem;
+  margin-bottom:-.5rem;
+}
+.loop-box{
+  border:2px dashed var(--green-glow);
+  border-radius:14px;
+  padding:1.25rem;
+  position:relative;
+}
+.loop-label{
+  position:absolute;
+  top:-.7rem;
+  left:1.25rem;
+  background:var(--bg);
+  padding:0 .5rem;
+  font-size:.72rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  color:var(--green);
+}
+.loop-box .flow{margin-top:.5rem}
+.flow-item.highlight{
+  border-color:var(--green-glow);
+  background:rgba(74,222,128,.06);
+}
 
 /* Results */
 .results-grid{
@@ -309,6 +352,72 @@ p code,.step code,li code{
 .profile-box h3{margin-bottom:.75rem}
 .profile-box p{color:var(--muted);font-size:.95rem;margin-bottom:1rem}
 
+/* Benchmarks */
+.bench-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:1.25rem;
+}
+.bench-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:1.5rem;
+}
+.bench-card .bench-icon{
+  font-size:1.4rem;
+  margin-bottom:.75rem;
+  display:block;
+  width:2.6rem;height:2.6rem;
+  line-height:2.6rem;
+  text-align:center;
+  border-radius:8px;
+  background:var(--surface2);
+}
+.bench-card h3{font-size:1.05rem;margin-bottom:.35rem}
+.bench-card .bench-meta{
+  color:var(--muted);
+  font-size:.85rem;
+  margin-bottom:.5rem;
+}
+.bench-card p{color:var(--muted);font-size:.9rem}
+.bench-card .bench-tags{
+  display:flex;
+  gap:.4rem;
+  flex-wrap:wrap;
+  margin-top:.75rem;
+}
+.bench-card .tag{
+  font-size:.72rem;
+  font-weight:600;
+  padding:.2rem .55rem;
+  border-radius:4px;
+  background:var(--surface2);
+  color:var(--green-dim);
+  border:1px solid var(--border);
+}
+
+/* Measurement pills */
+.measure-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+  gap:1rem;
+  margin-top:1.5rem;
+}
+.measure-pill{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:1.25rem;
+  text-align:center;
+}
+.measure-pill strong{
+  display:block;
+  font-size:1rem;
+  margin-bottom:.25rem;
+}
+.measure-pill span{color:var(--muted);font-size:.82rem}
+
 /* Footer */
 footer{
   border-top:1px solid var(--border);
@@ -328,6 +437,8 @@ footer a{color:var(--green)}
   .step::before{width:2.5rem;height:2.5rem;font-size:1rem}
   .flow-arrow{display:none}
   .flow{gap:.75rem}
+  .flow-item{min-width:120px;padding:.75rem 1rem}
+  .loop-box{padding:1rem .75rem}
 }
 </style>
 </head>
@@ -338,9 +449,10 @@ footer a{color:var(--green)}
   <h1><span class="green">GreenCode</span> Constitution</h1>
   <p class="tagline">A structured hierarchy of energy-efficiency principles for guiding LLM agents in automated code optimization.</p>
   <div class="stats">
-    <div class="stat"><strong>35+</strong><span>Anti-patterns covered</span></div>
+    <div class="stat"><strong>37</strong><span>Anti-patterns covered</span></div>
     <div class="stat"><strong>4 Tiers</strong><span>Prioritized severity</span></div>
-    <div class="stat"><strong>15+</strong><span>Language &amp; infra skills</span></div>
+    <div class="stat"><strong>21</strong><span>Language &amp; infra skills</span></div>
+    <div class="stat"><strong>4</strong><span>Benchmark suites</span></div>
   </div>
   <div class="cta-row">
     <a href="#usage" class="btn btn-primary">Get started</a>
@@ -417,32 +529,100 @@ footer a{color:var(--green)}
   <div class="container">
     <p class="section-label">Architecture</p>
     <h2 class="section-title">How it works</h2>
-    <p class="section-subtitle">The constitution and skill documents form a two-layer system. The constitution governs priority, scope, and conflict resolution. Skills provide implementation details per technology.</p>
+    <p class="section-subtitle">The constitution provides the principles. Benchmark prompts define the goal. The agent profiles, optimizes in a loop, and commits each improvement with measured results.</p>
 
-    <div class="flow">
-      <div class="flow-item">
-        <strong>skill.md</strong>
-        <span>Constitution + skill table</span>
+    <div class="arch-phases">
+      <!-- Phase 1: Setup -->
+      <div class="arch-phase">
+        <p class="phase-label">Setup</p>
+        <div class="flow">
+          <div class="flow-item">
+            <strong>skill.md</strong>
+            <span>Constitution + skill table</span>
+          </div>
+          <span class="flow-arrow">&rarr;</span>
+          <div class="flow-item">
+            <strong>Detect project</strong>
+            <span>Find tech markers</span>
+          </div>
+          <span class="flow-arrow">&rarr;</span>
+          <div class="flow-item">
+            <strong>Fetch skills</strong>
+            <span>Language &amp; infra docs</span>
+          </div>
+        </div>
       </div>
-      <span class="flow-arrow">&rarr;</span>
-      <div class="flow-item">
-        <strong>Detect project</strong>
-        <span>find patterns in repo</span>
+
+      <div class="phase-connector">&darr;</div>
+
+      <!-- Phase 2: Measure -->
+      <div class="arch-phase">
+        <p class="phase-label">Measure</p>
+        <div class="flow">
+          <div class="flow-item">
+            <strong>Baseline</strong>
+            <span>Run benchmark + profiler</span>
+          </div>
+          <span class="flow-arrow">&rarr;</span>
+          <div class="flow-item">
+            <strong>Profile hotspots</strong>
+            <span>nsys / perf / cProfile</span>
+          </div>
+          <span class="flow-arrow">&rarr;</span>
+          <div class="flow-item">
+            <strong>Plan 5&ndash;8 fixes</strong>
+            <span>Ranked by energy impact</span>
+          </div>
+        </div>
       </div>
-      <span class="flow-arrow">&rarr;</span>
-      <div class="flow-item">
-        <strong>Fetch skills</strong>
-        <span>Language &amp; infra docs</span>
+
+      <div class="phase-connector">&darr;</div>
+
+      <!-- Phase 3: Optimize loop -->
+      <div class="arch-phase">
+        <p class="phase-label">Optimize</p>
+        <div class="loop-box">
+          <span class="loop-label">Repeat per optimization</span>
+          <div class="flow">
+            <div class="flow-item highlight">
+              <strong>Apply fix</strong>
+              <span>Code change + rebuild</span>
+            </div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="flow-item highlight">
+              <strong>Self-critique</strong>
+              <span>8-point checklist</span>
+            </div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="flow-item highlight">
+              <strong>Benchmark</strong>
+              <span>Measure energy delta</span>
+            </div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="flow-item highlight">
+              <strong>Commit</strong>
+              <span>Feature + energy result</span>
+            </div>
+          </div>
+        </div>
       </div>
-      <span class="flow-arrow">&rarr;</span>
-      <div class="flow-item">
-        <strong>Audit &amp; refactor</strong>
-        <span>Principled proposals</span>
-      </div>
-      <span class="flow-arrow">&rarr;</span>
-      <div class="flow-item">
-        <strong>Self-critique</strong>
-        <span>7-point checklist</span>
+
+      <div class="phase-connector">&darr;</div>
+
+      <!-- Phase 4: Finalize -->
+      <div class="arch-phase">
+        <p class="phase-label">Finalize</p>
+        <div class="flow">
+          <div class="flow-item">
+            <strong>End-to-end comparison</strong>
+            <span>Baseline vs. final</span>
+          </div>
+          <span class="flow-arrow">&rarr;</span>
+          <div class="flow-item">
+            <strong>Summary commit</strong>
+            <span>Total improvement + greencode hash</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -491,7 +671,21 @@ cp skill.md .claude/skill-greencode.md
           <h3>Measure with the energy profiler</h3>
           <p>Run the built-in energy profiler to measure actual CPU and GPU energy consumption before and after optimization.</p>
 <pre>bash &lt;(curl -sfL https://greencode-constitution.org/profile.sh) -- python my_app.py</pre>
-          <p>Outputs CPU joules (RAPL/perf), GPU joules (nvidia-smi/rocm-smi), wall time, and CPU time.</p>
+          <p>Outputs CPU joules, GPU joules, wall time, and CPU time. Supports multiple measurement backends:</p>
+          <div class="measure-grid">
+            <div class="measure-pill">
+              <strong>perf / RAPL</strong>
+              <span>Hardware CPU energy counters (Intel/AMD)</span>
+            </div>
+            <div class="measure-pill">
+              <strong>SPBM hwmon</strong>
+              <span>DGX Spark GB10 hardware accumulators</span>
+            </div>
+            <div class="measure-pill">
+              <strong>nvidia-smi / rocm-smi</strong>
+              <span>GPU energy via polling</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -503,6 +697,7 @@ cp skill.md .claude/skill-greencode.md
       <div class="skill-chip"><span class="dot"></span>Java</div>
       <div class="skill-chip"><span class="dot"></span>JavaScript / TypeScript</div>
       <div class="skill-chip"><span class="dot"></span>C / C++</div>
+      <div class="skill-chip"><span class="dot"></span>CUDA</div>
       <div class="skill-chip"><span class="dot"></span>C#</div>
       <div class="skill-chip"><span class="dot"></span>Go</div>
       <div class="skill-chip"><span class="dot"></span>Ruby</div>
@@ -529,8 +724,64 @@ cp skill.md .claude/skill-greencode.md
   </div>
 </section>
 
-<!-- Results (placeholder — uncomment when real results are available)
-<section id="results">
+<!-- Benchmarks -->
+<section id="benchmarks">
+  <div class="container">
+    <p class="section-label">Benchmarks</p>
+    <h2 class="section-title">Standardized evaluation suites</h2>
+    <p class="section-subtitle">Reproducible benchmarks for measuring energy improvements. Each suite includes prepare, build, test, and profiling scripts.</p>
+
+    <div class="bench-grid">
+      <div class="bench-card">
+        <span class="bench-icon">&#x1F9E0;</span>
+        <h3>llama.cpp</h3>
+        <p class="bench-meta">LLM inference &middot; CUDA</p>
+        <p>Qwen3-8B quantized model. Measures prompt processing and text generation throughput with GPU energy profiling via nvidia-smi and Nsight.</p>
+        <div class="bench-tags">
+          <span class="tag">488 input tokens</span>
+          <span class="tag">512 output tokens</span>
+          <span class="tag">CUDA</span>
+        </div>
+      </div>
+      <div class="bench-card">
+        <span class="bench-icon">&#x1F3AC;</span>
+        <h3>FFmpeg</h3>
+        <p class="bench-meta">Video transcoding &middot; CPU + GPU</p>
+        <p>1080p CPU and 4K GPU transcoding pipelines with complex filter graphs. Auto-detects NVENC for GPU-accelerated encoding.</p>
+        <div class="bench-tags">
+          <span class="tag">60s synthetic</span>
+          <span class="tag">h264 / NVENC</span>
+          <span class="tag">10+ filters</span>
+        </div>
+      </div>
+      <div class="bench-card">
+        <span class="bench-icon">&#x1F9EA;</span>
+        <h3>Pasteur</h3>
+        <p class="bench-meta">Data synthesis &middot; CPU-bound</p>
+        <p>Kedro-based data synthesis pipeline with the mimic_core dataset. CPU-intensive workload exercising Python data processing.</p>
+        <div class="bench-tags">
+          <span class="tag">Python</span>
+          <span class="tag">Kedro</span>
+          <span class="tag">mimic_core</span>
+        </div>
+      </div>
+      <div class="bench-card">
+        <span class="bench-icon">&#x1F3AF;</span>
+        <h3>Scenarios</h3>
+        <p class="bench-meta">Algorithms &middot; 6 languages</p>
+        <p>~45 scenarios from LeetCode, CLBG, and micro-benchmarks across C, C++, Java, Python, Ruby, and Rust.</p>
+        <div class="bench-tags">
+          <span class="tag">LeetCode</span>
+          <span class="tag">CLBG</span>
+          <span class="tag">6 languages</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Results -->
+<section id="results" class="how-it-works">
   <div class="container">
     <p class="section-label">Results</p>
     <h2 class="section-title">Measured energy reductions</h2>
@@ -557,11 +808,10 @@ cp skill.md .claude/skill-greencode.md
 
     <div class="profile-box">
       <h3>Self-critique protocol</h3>
-      <p>Every proposed refactoring passes a 7-point checklist before the agent presents it to a human reviewer: correctness, safety, scope, principle citation, impact estimation, trade-off assessment, and test compatibility. If any check fails, the proposal is revised or discarded.</p>
+      <p>Every proposed refactoring passes an 8-point checklist before the agent presents it to a human reviewer: profiling verification, correctness, safety, scope, principle citation, impact estimation, trade-off assessment, and test compatibility. A 4-point post-proposal review then checks the proposal as if reviewing a pull request. If any check fails, the proposal is revised or discarded.</p>
     </div>
   </div>
 </section>
--->
 
 <!-- Footer -->
 <footer>
