@@ -488,6 +488,16 @@ footer a{color:var(--green)}
         <h3>Pluggable skill system</h3>
         <p>The constitution defines <em>what</em> to optimize. Language and infrastructure-specific skill documents define <em>how</em>. Skills are fetched on demand based on project detection.</p>
       </div>
+      <div class="card">
+        <span class="icon">&#x1F9EA;</span>
+        <h3>Standardized benchmarks</h3>
+        <p>Four reproducible benchmark suites (llama.cpp, FFmpeg, Pasteur, Scenarios) with prepare, build, test, and profiling scripts for consistent evaluation.</p>
+      </div>
+      <div class="card">
+        <span class="icon">&#x1F50B;</span>
+        <h3>Hardware energy profiling</h3>
+        <p>Built-in profiler measures CPU and GPU energy via RAPL, perf, SPBM hwmon, or nvidia-smi. Optional smart plug integration for wall power measurement.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -785,24 +795,28 @@ cp skill.md .claude/skill-greencode.md
   <div class="container">
     <p class="section-label">Results</p>
     <h2 class="section-title">Measured energy reductions</h2>
-    <p class="section-subtitle">Evaluated on open-source projects. The agent optimized the software that runs LLMs.</p>
+    <p class="section-subtitle">Evaluated on open-source projects. All measurements via SPBM hardware energy accumulators on DGX Spark (GB10), except llama.cpp kernel-only (nvidia-smi).</p>
 
     <div class="results-grid">
       <div class="result-card">
-        <span class="pct">&darr; 4.2%</span>
-        <span class="label">llama.cpp</span>
+        <span style="font-size:1.5rem">&#x1F9E0;</span>
+        <span class="pct">&darr; 5%</span>
+        <span class="label">llama.cpp<br><small style="color:var(--muted);font-size:.7rem">GPU &middot; CUDA kernel fusions</small></span>
       </div>
       <div class="result-card">
-        <span class="pct">&darr; 3.1%</span>
-        <span class="label">vLLM</span>
+        <span style="font-size:1.5rem">&#x1F3AC;</span>
+        <span class="pct">&darr; 13.5%</span>
+        <span class="label">FFmpeg<br><small style="color:var(--muted);font-size:.7rem">total &middot; 4K GPU pipeline</small></span>
       </div>
       <div class="result-card">
-        <span class="pct">&darr; 8.3%</span>
-        <span class="label">PostgreSQL</span>
+        <span style="font-size:1.5rem">&#x1F9EA;</span>
+        <span class="pct">&darr; 32.5%</span>
+        <span class="label">Pasteur<br><small style="color:var(--muted);font-size:.7rem">total &middot; data synthesis</small></span>
       </div>
       <div class="result-card">
-        <span class="pct">&darr; 5.5%</span>
-        <span class="label">Redis</span>
+        <span style="font-size:1.5rem">&#x1F3AF;</span>
+        <span class="pct">&darr; 21%</span>
+        <span class="label">Scenarios<br><small style="color:var(--muted);font-size:.7rem">total &middot; 45 problems, 6 langs</small></span>
       </div>
     </div>
 
