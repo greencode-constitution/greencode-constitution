@@ -25,6 +25,26 @@ cp skill.md .claude/skill-greencode.md
 bash <(curl -sfL https://greencode-constitution.org/profile.sh) -- python my_app.py
 ```
 
+### Try it on your own project
+
+Paste the following into your favorite agent extension (e.g., Cursor, Windsurf,
+Claude Code, Copilot Chat) to optimize an existing codebase:
+
+> Fetch and read the GreenCode Constitution from
+> https://greencode-constitution.org/skill.md (read all of it before analyzing
+> the project). Then, audit this project for energy anti-patterns. Try to lower
+> energy consumption by at least 5%, doing however many improvements are
+> required. Do not stop until you reach that goal. Profile before proposing
+> changes and measure the impact of each optimization using the built-in energy
+> profiler. In the end, do a final benchmark on baseline. Afterwards, add the
+> code per feature, benchmark it, and commit it with information about what
+> the commit does plus how much more efficiency it adds. Finally, add an empty
+> commit with the end-to-end improvement.
+
+The agent will fetch the constitution, detect project technologies, profile
+hotspots, and start proposing principled refactorings, committing each
+improvement with measured energy results.
+
 ## Structure
 
 | Path | Description |
