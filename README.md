@@ -79,8 +79,7 @@ python3 build.py --test
 
 ## Hacking
 
-To iterate on the constitution and run benchmarks locally, you need an LLM
-coding agent that can execute shell commands. Examples below use the
+To iterate on the constitution and run benchmarks locally, it is recommended to have an Agent that can run from CLI. This way, you can make changes and re-run the agent cleanly. Examples below use the
 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code):
 
 ```bash
