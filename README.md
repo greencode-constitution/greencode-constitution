@@ -57,6 +57,87 @@ python3 build.py
 python3 build.py --test
 ```
 
+## Hacking
+
+To iterate on the constitution and run benchmarks locally, you need an LLM
+coding agent that can execute shell commands. Examples below use the
+[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code):
+
+```bash
+# macOS, Linux, WSL
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+### 1. Start the local server
+
+```bash
+screen -S const
+python3 build.py --test
+# Ctrl+A, D to detach
+```
+
+This serves `skill.md`, docs, and benchmark scripts at `localhost:3232` with
+live regeneration.
+
+### 2. Clone a benchmark repo
+
+```bash
+# llama.cpp (LLM inference, CUDA)
+git clone https://github.com/antheas/llama.cpp ../llama.cpp
+
+# FFmpeg (video transcoding, CPU + GPU)
+git clone https://github.com/FFmpeg/FFmpeg ../FFmpeg
+
+# Pasteur (data synthesis, CPU-bound Python)
+git clone https://github.com/pasteur-dev/pasteur ../pasteur
+
+# Scenarios (algorithms, 6 languages)
+git clone https://github.com/PLEnergyDev/green-languages-scenarios ../green-languages-scenarios
+```
+
+### 3. Run the agent
+
+From inside the benchmark repo, launch your favorite agent with the benchmark
+prompt and finalize instructions concatenated.
+
+Examples with the Claude Code CLI:
+
+**llama.cpp:**
+```bash
+cd ../llama.cpp
+claude --dangerously-skip-permissions \
+  "$(cat ../greencode-constitution/benches/llamacpp/prompt.md) $(cat ../greencode-constitution/benches/templates/finalize_suffix.md)"
+```
+
+**FFmpeg:**
+```bash
+cd ../FFmpeg
+claude --dangerously-skip-permissions \
+  "$(cat ../greencode-constitution/benches/ffmpeg/prompt.md) $(cat ../greencode-constitution/benches/templates/finalize_suffix.md)"
+```
+
+**Pasteur:**
+```bash
+cd ../pasteur
+claude --dangerously-skip-permissions \
+  "$(cat ../greencode-constitution/benches/pasteur/prompt.md) $(cat ../greencode-constitution/benches/templates/finalize_suffix.md)"
+```
+
+**Scenarios:**
+```bash
+cd ../green-languages-scenarios
+claude --dangerously-skip-permissions \
+  "$(cat ../greencode-constitution/benches/scenarios/prompt.md) $(cat ../greencode-constitution/benches/templates/finalize_suffix.md)"
+```
+
+The agent will fetch `localhost:3232/skill.md`, detect the project, run the
+benchmark suite, profile hotspots, apply optimizations in a loop, and commit
+each improvement with energy measurements. The final empty commit contains the
+end-to-end result and the greencode-constitution git hash.
+
+For other agents, pass the contents of `benches/<suite>/prompt.md` and
+`benches/templates/finalize_suffix.md` as the initial prompt.
+
 ## Acknowledgements
 
 This work was supported by the VILLUM Foundation under project "Teaching AI Green Coding" (VIL70090); by ITEA4 and the Innovation Fund Denmark for projects "GreenCode" (2306) and "MAST" (22035).
