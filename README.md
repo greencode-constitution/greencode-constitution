@@ -68,6 +68,19 @@ coding agent that can execute shell commands. Examples below use the
 curl -fsSL https://claude.ai/install.sh | bash
 ```
 
+### DGX Spark (GB10) setup
+
+On NVIDIA DGX Spark systems, install the
+[SPBM hwmon driver](https://github.com/antheas/spark_hwmon) for hardware
+energy accumulators (CPU + GPU). This gives the profiler accurate measurements
+without needing `nvidia-smi` or RAPL.
+
+The module auto-loads at boot via ACPI modalias (`NVDA8800`). Verify with:
+
+```bash
+sensors spbm-*
+```
+
 ### 1. Start the local server
 
 ```bash
