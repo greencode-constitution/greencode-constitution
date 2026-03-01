@@ -114,7 +114,7 @@ live regeneration.
 
 ```bash
 # llama.cpp (LLM inference, CUDA)
-git clone https://github.com/antheas/llama.cpp ../llama.cpp
+git clone https://github.com/ggml-org/llama.cpp ../llama.cpp
 
 # FFmpeg (video transcoding, CPU + GPU)
 git clone https://github.com/FFmpeg/FFmpeg ../FFmpeg
