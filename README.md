@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="favicon.png" width="128" height="128" alt="GreenCode Constitution">
+</p>
+
 # GreenCode Constitution
 
 A structured hierarchy of energy-efficiency principles for guiding LLM agents in automated code optimization.
