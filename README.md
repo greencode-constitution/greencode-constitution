@@ -73,9 +73,7 @@ curl -fsSL https://claude.ai/install.sh | bash
 On NVIDIA DGX Spark systems, install the
 [SPBM hwmon driver](https://github.com/antheas/spark_hwmon) for hardware
 energy accumulators (CPU + GPU). This gives the profiler accurate measurements
-without needing `nvidia-smi` or RAPL.
-
-The module auto-loads at boot via ACPI modalias (`NVDA8800`). Verify with:
+without needing `nvidia-smi` or RAPL. Verify with:
 
 ```bash
 sensors spbm-*
