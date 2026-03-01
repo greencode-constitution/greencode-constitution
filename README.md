@@ -53,6 +53,10 @@ python3 build.py
 python3 build.py --test
 ```
 
+## Acknowledgements
+
+This work was supported by the VILLUM Foundation under project "Teaching AI Green Coding" (VIL70090); by ITEA4 and the Innovation Fund Denmark for projects "GreenCode" (2306) and "MAST" (22035).
+
 ## License
 
 See [LICENSE](LICENSE) for details.
