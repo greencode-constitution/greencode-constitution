@@ -9,7 +9,17 @@ Options:
     --json          Output results as JSON
     --gpu-poll-ms   GPU polling interval in milliseconds (default: 100)
     --plug-poll-s   Smart plug polling interval in seconds (default: 10)
+    --cooldown-ms   Min idle time since previous run before measuring (default: 2000)
+    -v, --verbose   Print lock/cooldown status messages
     -o, --output    Write results to file instead of stdout
+
+Concurrency:
+    Only one run is allowed at a time per machine (enforced via an flock on
+    $TMPDIR/energy-profile.lock); a second invocation waits for the first.
+    The exit time is recorded in $TMPDIR/energy-profile.last-exit and the next
+    run sleeps until --cooldown-ms has elapsed since it, so measurements don't
+    contaminate each other with leftover thermal/power activity.
+    Override the state directory with ENERGY_PROFILE_STATE_DIR.
 
 Requirements:
     - Linux with RAPL support (Intel/AMD CPUs), perf access, or SPBM driver
@@ -55,6 +65,8 @@ Example:
 
 import argparse
 import base64
+import contextlib
+import fcntl
 import json
 import math
 import os
@@ -62,11 +74,80 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional, List
+
+
+# Lock + cooldown state lives in a stable, system-wide location so any two
+# invocations on the same machine coordinate, regardless of working directory.
+_STATE_DIR = Path(os.environ.get("ENERGY_PROFILE_STATE_DIR", tempfile.gettempdir()))
+LOCK_FILE = _STATE_DIR / "energy-profile.lock"
+EXIT_STAMP_FILE = _STATE_DIR / "energy-profile.last-exit"
+
+
+@contextlib.contextmanager
+def profile_lock(cooldown_ms: int = 2000, verbose: bool = False):
+    """Serialize energy profiling runs on this machine and enforce a cooldown.
+
+    Acquires an exclusive ``flock`` (blocking) so at most one profiling run
+    happens at a time. Before yielding, if the previous run exited less than
+    ``cooldown_ms`` ago, sleep the remainder so the system settles between
+    measurements. On exit, record the exit timestamp for the next run.
+
+    The cooldown wait happens while holding the lock, so a queued second
+    invocation also respects the cooldown after the first one finishes.
+    """
+    lock_fd = open(LOCK_FILE, "w")
+    blocked = False
+    try:
+        # Non-blocking probe so we can tell the user we're waiting.
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            blocked = True
+            if verbose:
+                print(
+                    "energy-profile: another run is in progress, waiting for lock...",
+                    file=sys.stderr,
+                )
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        if blocked and verbose:
+            print("energy-profile: lock acquired.", file=sys.stderr)
+
+        # Cooldown: sleep until at least cooldown_ms has elapsed since the
+        # previous run exited.
+        cooldown_s = cooldown_ms / 1000.0
+        if cooldown_s > 0:
+            try:
+                last_exit = float(EXIT_STAMP_FILE.read_text().strip())
+            except (IOError, ValueError):
+                last_exit = None
+            if last_exit is not None:
+                remaining = cooldown_s - (time.time() - last_exit)
+                if remaining > 0:
+                    if verbose:
+                        print(
+                            f"energy-profile: cooling down {remaining:.2f}s "
+                            f"(of {cooldown_s:.2f}s) before measuring...",
+                            file=sys.stderr,
+                        )
+                    time.sleep(remaining)
+
+        yield
+    finally:
+        # Record exit time for the next run's cooldown, then release the lock.
+        try:
+            EXIT_STAMP_FILE.write_text(f"{time.time():.6f}\n")
+        except IOError:
+            pass
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            lock_fd.close()
 
 
 @dataclass
@@ -1198,6 +1279,11 @@ def main():
                         help="GPU polling interval in milliseconds (default: 100)")
     parser.add_argument("--plug-poll-s", type=float, default=10.0,
                         help="Smart plug polling interval in seconds (default: 10)")
+    parser.add_argument("--cooldown-ms", type=int, default=2000,
+                        help="Minimum idle time (ms) since the previous run "
+                             "before measuring; sleeps the remainder (default: 2000)")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="Print lock/cooldown status messages")
     parser.add_argument("-o", "--output", type=str, help="Write output to file")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="Command to profile")
 
@@ -1212,7 +1298,8 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    result = measure_energy(command, args.gpu_poll_ms, args.plug_poll_s)
+    with profile_lock(args.cooldown_ms, args.verbose):
+        result = measure_energy(command, args.gpu_poll_ms, args.plug_poll_s)
 
     if args.json:
         output = json.dumps(asdict(result), indent=2)
